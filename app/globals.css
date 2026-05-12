@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gold: #C9A84C;
+  --gold-dim: #8A6B2E;
+  --gold-light: #E8D5A3;
+  --bg: #FDFAF5;
+  --surface: #F5F0E8;
+  --ink: #1A1714;
+  --muted: #6B6560;
+  --border: rgba(201, 168, 76, 0.25);
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: 'Playfair Display', serif;
+}
+
+.card {
+  background: #ffffff;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+}
+
+.card-sand {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+}
+
+.card-selected {
+  background: #F9F3E6;
+  border: 1.5px solid var(--gold);
+  border-radius: 12px;
+}
+
+.upload-zone {
+  border: 1.5px dashed var(--gold-light);
+  border-radius: 12px;
+  background: #ffffff;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.upload-zone:hover, .upload-zone.dragging, .upload-zone.uploaded {
+  border-style: solid;
+  border-color: var(--gold);
+}
+
+.btn-primary {
+  background: var(--gold);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 14px 18px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 500;
+  transition: background 160ms ease;
+}
+.btn-ghost:hover {
+  background: var(--surface);
+}
+
+.progress-track {
+  height: 3px;
+  background: var(--surface);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 2px;
+  transition: width 240ms ease;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  border: 0.5px solid rgba(0,0,0,0.08);
+}
+
+.queue-status-queued { color: var(--muted); }
+.queue-status-generating { color: var(--gold-dim); }
+.queue-status-captioning { color: var(--gold-dim); }
+.queue-status-done { color: #2D7A4F; }
+.queue-status-error { color: #B0463A; }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+#print-container { display: none; }
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
+
+  /* Force browsers to print background colors and images.
+     Without this, the entire color/pattern story is stripped from the PDF. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  body { background: #FFFFFF !important; }
+
+  body > *:not(#print-container) { display: none !important; }
+
+  #print-container {
+    display: block !important;
+  }
+
+  .slide-print {
+    width: 297mm;
+    height: 210mm;
+    overflow: hidden;
+    position: relative;
+  }
+  /* page-break BETWEEN slides, not after the last one (avoids trailing blank page) */
+  .slide-print:not(:last-child) {
+    page-break-after: always;
+    break-after: page;
+  }
+  .slide-print > div {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: auto !important;
+  }
+
+  nav, header, .slide-nav, .export-btn { display: none !important; }
+}
