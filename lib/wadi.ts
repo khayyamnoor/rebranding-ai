@@ -11,15 +11,18 @@ import type { NextRequest } from 'next/server';
  * in the Wadi platform. See CLAUDE.md for the full ticket spec.
  */
 
-export const WADI_TICKET_ISSUER = 'wadi';
-export const WADI_TICKET_AUDIENCE = 'wadi-tools';
+// These must match what the live Wadi platform stamps into its tickets.
+// Observed from a real Wadi ticket: iss="wadi", aud=<tool label> (e.g.
+// "diagnostics"). Configurable so the same code matches each tool's label.
+export const WADI_TICKET_ISSUER = process.env.WADI_TICKET_ISSUER ?? 'wadi';
+export const WADI_TICKET_AUDIENCE = process.env.WADI_TICKET_AUDIENCE ?? 'diagnostics';
 
 export interface WadiTicket {
   /** Wadi user id */
   userId: string;
-  /** Plan / tier the user is on (e.g. "pro") */
+  /** Plan / tier the user is on (e.g. "free", "pro") */
   plan: string;
-  /** Which provider keys the user has configured in Wadi, e.g. ["gemini"] */
+  /** Which provider keys the user has configured in Wadi, if Wadi sends them. */
   keys: string[];
   /** Unix seconds */
   issuedAt: number;

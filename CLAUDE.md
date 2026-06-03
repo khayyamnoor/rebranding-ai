@@ -82,24 +82,36 @@ storage. This app trusts Wadi and refuses to run outside it.
 - **Phase-1 AI test:** deferred until Wadi's proxy exists. The app shows the
   "add your Gemini key in Wadi" state; live image generation is tested later.
 
-## Ticket spec (hand this to the Wadi project)
+## Ticket spec (CONFIRMED from a real Wadi ticket — Wadi is the source of truth)
 
-A Wadi ticket is a **JWT signed with RS256**.
+A Wadi ticket is a **JWT signed with RS256**. Observed real example:
 
 - **Header:** `{ "alg": "RS256", "typ": "JWT" }`
 - **Claims:**
-  - `iss` = `"wadi"`        (issuer — verified)
-  - `aud` = `"wadi-tools"`  (audience — verified)
-  - `sub` = Wadi user id    (string, required)
-  - `plan` = plan/tier string (e.g. `"pro"`)
-  - `keys` = string[] of providers the user has configured, e.g. `["gemini"]`
-  - `iat` = issued-at (unix seconds)
-  - `exp` = expiry (unix seconds) — keep **short, ~5 minutes**
+  - `iss` = `"wadi"`               (issuer — verified)
+  - `aud` = the tool's label, e.g. `"diagnostics"` (audience — verified; scopes
+    a ticket to one tool. Set `WADI_TICKET_AUDIENCE` to this tool's label.)
+  - `sub` = Wadi user id (UUID string, required)
+  - `plan` = plan/tier string (seen: `"free"`)
+  - `ver` = ticket format version (seen: `1`)
+  - `iat` / `exp` = issued-at / expiry (unix seconds) — **~5-minute** TTL
+  - (No `keys` claim — the "do you have a Gemini key" signal comes from the AI
+    proxy's error response, not the ticket.)
 - **Delivery:** Wadi opens the tool in its iframe with the ticket on the URL:
   `https://<tool>/?wadi_ticket=<JWT>`. (Transport hardening — cookie +
   postMessage refresh for long sessions — is a Checkpoint-B follow-up.)
 - **Verification (this app):** `lib/wadi.ts` → `verifyTicket()` pins
-  `algorithms: ['RS256']` and checks `iss`/`aud`/`exp`. Fails closed.
+  `algorithms: ['RS256']` and checks `iss`/`aud`/`exp` against the **real Wadi
+  public key** in `WADI_JWT_PUBLIC_KEY`. Fails closed.
+
+**Real Wadi public key:** the founder supplied Wadi's RS256 public key; it is
+installed in `.env.local` and verifies real tickets (proven). It is safe to
+expose (verify-only). The matching private key lives only in Wadi.
+
+**Open question to confirm with founder:** the sample ticket's `aud` was
+`"diagnostics"`. Confirm that is the label Wadi assigns to THIS tool
+(BrandVista), vs. another tool — `WADI_TICKET_AUDIENCE` must equal this tool's
+own label so tickets minted for other tools are rejected.
 
 ## AI proxy spec (Wadi must build this — used in Checkpoint C, tested later)
 

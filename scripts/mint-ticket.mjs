@@ -47,17 +47,27 @@ const args = process.argv.slice(2);
 const noKey = args.includes('--no-key');
 const expired = args.includes('--expired');
 
+// Match the real Wadi format (iss="wadi", aud=<tool label>). Configurable so
+// dev tickets line up with what this tool expects.
+const issuer = env.WADI_TICKET_ISSUER || 'wadi';
+const audience = env.WADI_TICKET_AUDIENCE || 'diagnostics';
+
+// NOTE: this signs with the DEV private key. It only verifies if the app's
+// WADI_JWT_PUBLIC_KEY is the matching DEV public key. Once the real Wadi public
+// key is installed (production / real-ticket testing), use real Wadi tickets
+// instead — paste one from Wadi.
 const key = await importPKCS8(pem.replace(/\\n/g, '\n'), 'RS256');
 
 const now = Math.floor(Date.now() / 1000);
 const builder = new SignJWT({
   plan: 'pro',
+  ver: 1,
   keys: noKey ? [] : ['gemini'],
 })
-  .setProtectedHeader({ alg: 'RS256' })
+  .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
   .setSubject('test-user-123')
-  .setIssuer('wadi')
-  .setAudience('wadi-tools')
+  .setIssuer(issuer)
+  .setAudience(audience)
   .setIssuedAt(expired ? now - 3600 : now)
   .setExpirationTime(expired ? now - 3000 : now + 5 * 60);
 
