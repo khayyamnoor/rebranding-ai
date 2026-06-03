@@ -36,7 +36,7 @@ export function UploadScreen({ onStart }: Props) {
         >
           Begin with the mark.
         </h1>
-        <p className="mt-5 text-muted text-lg max-w-xl">
+        <p className="mt-5 text-soft text-lg max-w-xl">
           A single image. We read it, then build the world it lives in.
         </p>
       </section>

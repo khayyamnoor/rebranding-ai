@@ -67,20 +67,13 @@ export function WadiGate({ children }: { children: ReactNode }) {
 
 function GateScreen({ state }: { state: Exclude<GateState, 'ok'> }) {
   return (
-    <main
-      style={{
-        minHeight: '100dvh',
-        display: 'grid',
-        placeItems: 'center',
-        padding: 24,
-        textAlign: 'center',
-      }}
-    >
-      <div style={{ maxWidth: 420 }}>
-        <h1 style={{ fontSize: 22, marginBottom: 8 }}>
+    <main className="min-h-screen grid place-items-center px-6 text-center">
+      <div className="max-w-sm">
+        <p className="label-micro mb-3">Wadi</p>
+        <h1 className="font-display text-3xl md:text-4xl text-ink mb-3">
           {state === 'checking' ? 'Connecting to Wadi…' : 'Open this from Wadi'}
         </h1>
-        <p style={{ opacity: 0.7, lineHeight: 1.5 }}>
+        <p className="text-soft leading-relaxed">
           {state === 'checking'
             ? 'One moment.'
             : 'This tool only runs inside your Wadi dashboard. Please open it from there while signed in.'}

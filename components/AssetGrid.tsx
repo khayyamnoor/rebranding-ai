@@ -25,10 +25,8 @@ export function AssetGrid({ selected, onToggle }: Props) {
               'flex flex-col items-start gap-2 min-h-[96px]',
             ].join(' ')}
           >
-            <span className="font-display text-base">{a.label}</span>
-            <span className="text-xs text-muted uppercase tracking-wider">
-              {a.aspectRatio}
-            </span>
+            <span className="font-display text-base text-ink">{a.label}</span>
+            <span className="label-micro">{a.aspectRatio}</span>
           </button>
         );
       })}

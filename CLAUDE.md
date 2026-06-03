@@ -216,4 +216,11 @@ a valid signed ticket. Flags: `--no-key` (omit gemini from `keys`),
   removed. `components/NeedsKeyScreen.tsx` shows "Add your Gemini key in Wadi" on
   NO_KEY. Dev mock: `npm run mock-proxy` (`MODE=no_key|reject`). Live generation
   tested once Wadi's real proxy exists (deferred, per founder).
-- [ ] D — Wadi design tokens (flat, no gradients).
+- [x] **D — Wadi design tokens (flat, no gradients).** `app/wadi-tokens.css`
+  holds the shared tokens (sand canvas, forest-green actions, terracotta accent,
+  Fraunces / Archivo / Spline Sans Mono). `tailwind.config.ts` + `app/globals.css`
+  consume them; gate, needs-key, upload, generation, progress, queue, buttons,
+  cards restyled. **Scope:** the tool *chrome* only. The generated brand deck
+  (`SlideCard`) is the user's brand artifact — self-contained fonts/colors,
+  intentionally NOT restyled to Wadi. The full-screen deck *viewer*
+  (`ResultsScreen`, dark cinematic) is also left as the output environment.

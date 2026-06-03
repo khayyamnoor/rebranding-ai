@@ -158,14 +158,15 @@ and the slide deck swaps skeleton blocks for real copy live.
 
 | File | Layer | Responsibility | Key deps |
 |------|-------|----------------|----------|
-| `app/layout.tsx` | server | HTML shell, fonts; wraps the app in `<WadiGate>` (the access gate). | `WadiGate` |
+| `app/layout.tsx` | server | HTML shell; loads chrome fonts (Fraunces / Archivo / Spline Sans Mono) + the deck's fonts (Playfair Display / DM Sans); imports `wadi-tokens.css` then `globals.css`; wraps the app in `<WadiGate>`. | `WadiGate` |
+| `app/wadi-tokens.css` | client | Shared Wadi design tokens (`--wadi-*` colors, `--font-*`). Flat — no gradients. Single source of truth for the chrome's look. | — |
 | `app/page.tsx` | server | Just renders `<Studio/>` — access is handled by `WadiGate` (layout) + server API checks. | `Studio` |
 | `components/Studio.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref. `authedFetch` attaches `Authorization: Bearer <getWadiTicket()>` to every `/api/*` call. No props. On a `NO_KEY` proxy response it renders `NeedsKeyScreen`. | `components/*`, `lib/wadi-ticket`, `lib/types` |
 | `components/WadiGate.tsx` | client | Access gate. postMessage handshake (`ready` → receive `ticket`), verifies via `lib/wadi-ticket`, renders the tool only when valid (else "Open this from Wadi"). Exposes `getWadiTicket()`. Mounts `FrameBridge`. Ignores ticket messages not from `NEXT_PUBLIC_WADI_ORIGIN`. | `lib/wadi-ticket`, `FrameBridge` |
 | `components/FrameBridge.tsx` | client | Renders nothing. When embedded, posts `{source:'wadi-tool',type:'resize',height}` to the parent via `ResizeObserver` (prod targets `NEXT_PUBLIC_WADI_ORIGIN`, dev `'*'`). | — |
 | `components/NeedsKeyScreen.tsx` | client | Friendly "Add your Gemini key in Wadi" state, shown when the proxy returns `NO_KEY`. "Try again" button re-runs. Styled minimally (Wadi tokens in D). | — |
 | `next.config.js` | server cfg | `headers()` sets `Content-Security-Policy: frame-ancestors 'self' $NEXT_PUBLIC_WADI_ORIGIN` (+ `localhost:*` in dev) — only Wadi may embed. Also `nosniff`, `Referrer-Policy`. No `X-Frame-Options`. | — |
-| `app/globals.css` | client | Design tokens + component classes | tailwind |
+| `app/globals.css` | client | Consumes `wadi-tokens.css`; component classes (`.card`, `.btn-primary`, `.btn-ghost`, `.upload-zone`, `.label-micro`, `.progress-*`, `queue-status-*`) in the flat Wadi style; print rules for the deck export. | `wadi-tokens.css`, tailwind |
 | `components/UploadScreen.tsx` | client | Hero, upload zone, asset grid, validate-and-start. Copy is editorial ("Begin with the mark.", "The mark", "The world", "Begin") — no marketing language about "AI" or "mockups". | `UploadZone`, `AssetGrid` |
 | `components/UploadZone.tsx` | client | Drag/drop + click-to-browse | — |
 | `components/AssetGrid.tsx` | client | Render asset cards; multi-select | `lib/assets` |
@@ -248,8 +249,10 @@ Walk the code in this order — each step's context is set up by the prior one.
     than drifting back to wider rationale columns, and that the three
     `assetApplication` variants picked by `assetVariant()` all still
     render correctly.
-14. **`app/globals.css`** — last. Tokens (gold `#C9A84C`, sand `#F5F0E8`)
-    match the design system.
+14. **`app/wadi-tokens.css` + `app/globals.css`** — last. Wadi tokens (sand
+    canvas `#ECE3D2`, forest green `#155446`, terracotta `#BB4A2C`,
+    Fraunces/Archivo/Spline Sans Mono). Flat — no gradients. These style the
+    tool *chrome* only; `SlideCard` (the brand deck) is independent.
 
 ---
 
@@ -313,8 +316,10 @@ Walk the code in this order — each step's context is set up by the prior one.
   the field to `CopyContent` in `lib/types.ts` and the JSON template in
   `app/api/copy/route.ts`. Consider whether the new slide is dense (needs
   a pause slide before/after) or silent (already a pause).
-- **Change the design system:** tokens in `app/globals.css` and
-  `tailwind.config.ts`. Components reference token classes, not raw hexes.
+- **Change the design system (chrome):** edit `app/wadi-tokens.css` (the
+  `--wadi-*` tokens) and `tailwind.config.ts`. Chrome components reference token
+  classes, not raw hexes. The brand deck (`SlideCard`) is **not** driven by these
+  tokens — it styles itself from the user's brand palette + its own constants.
 - **Tune the voice:** edit the prompts in `app/api/copy/route.ts` and/or
   `app/api/caption/route.ts`. Treat the forbidden-words list and the
   per-field word caps as part of the product spec, not implementation

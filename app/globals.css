@@ -2,69 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --gold: #C9A84C;
-  --gold-dim: #8A6B2E;
-  --gold-light: #E8D5A3;
-  --bg: #FDFAF5;
-  --surface: #F5F0E8;
-  --ink: #1A1714;
-  --muted: #6B6560;
-  --border: rgba(201, 168, 76, 0.25);
-}
+/* Tool chrome uses the Wadi tokens in app/wadi-tokens.css. Flat — no gradients.
+   (The generated brand deck in SlideCard styles itself independently.) */
 
 html, body {
-  background: var(--bg);
-  color: var(--ink);
-  font-family: 'DM Sans', system-ui, sans-serif;
+  background: var(--wadi-canvas);
+  color: var(--wadi-ink);
+  font-family: var(--font-body);
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
 }
 
 .font-display {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-heading);
+}
+
+/* Micro labels — Spline Sans Mono, uppercase, tracked. */
+.label-micro {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  color: var(--wadi-muted);
 }
 
 .card {
-  background: #ffffff;
-  border: 0.5px solid var(--border);
-  border-radius: 12px;
+  background: var(--wadi-card);
+  border: 1px solid var(--wadi-line);
+  border-radius: var(--wadi-radius);
+  box-shadow: var(--wadi-shadow);
 }
 
 .card-sand {
-  background: var(--surface);
-  border: 0.5px solid var(--border);
-  border-radius: 12px;
+  background: var(--wadi-surface-2);
+  border: 1px solid var(--wadi-line);
+  border-radius: var(--wadi-radius);
 }
 
 .card-selected {
-  background: #F9F3E6;
-  border: 1.5px solid var(--gold);
-  border-radius: 12px;
+  background: var(--wadi-tint-green);
+  border: 1.5px solid var(--wadi-green);
+  border-radius: var(--wadi-radius);
 }
 
 .upload-zone {
-  border: 1.5px dashed var(--gold-light);
-  border-radius: 12px;
-  background: #ffffff;
+  border: 1.5px dashed var(--wadi-line);
+  border-radius: var(--wadi-radius);
+  background: var(--wadi-card);
   transition: border-color 160ms ease, background 160ms ease;
 }
-.upload-zone:hover, .upload-zone.dragging, .upload-zone.uploaded {
+.upload-zone:hover, .upload-zone.dragging {
   border-style: solid;
-  border-color: var(--gold);
+  border-color: var(--wadi-green);
+}
+.upload-zone.uploaded {
+  border-style: solid;
+  border-color: var(--wadi-green);
+  background: var(--wadi-tint-green);
 }
 
 .btn-primary {
-  background: var(--gold);
+  background: var(--wadi-green);
   color: #ffffff;
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 14px 18px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  transition: filter 160ms ease, opacity 160ms ease;
+  font-weight: 600;
+  transition: background 160ms ease, opacity 160ms ease;
 }
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(0.96);
+  background: var(--wadi-green-hover);
 }
 .btn-primary:disabled {
   opacity: 0.45;
@@ -73,27 +79,27 @@ html, body {
 
 .btn-ghost {
   background: transparent;
-  color: var(--ink);
-  border: 0.5px solid var(--border);
-  border-radius: 10px;
+  color: var(--wadi-ink);
+  border: 1px solid var(--wadi-line);
+  border-radius: 12px;
   padding: 10px 14px;
   font-weight: 500;
   transition: background 160ms ease;
 }
 .btn-ghost:hover {
-  background: var(--surface);
+  background: var(--wadi-surface-2);
 }
 
 .progress-track {
-  height: 3px;
-  background: var(--surface);
-  border-radius: 2px;
+  height: 4px;
+  background: var(--wadi-surface-2);
+  border-radius: 9999px;
   overflow: hidden;
 }
 .progress-fill {
   height: 100%;
-  background: var(--gold);
-  border-radius: 2px;
+  background: var(--wadi-green);
+  border-radius: 9999px;
   transition: width 240ms ease;
 }
 
@@ -101,14 +107,14 @@ html, body {
   width: 20px;
   height: 20px;
   border-radius: 9999px;
-  border: 0.5px solid rgba(0,0,0,0.08);
+  border: 1px solid var(--wadi-line);
 }
 
-.queue-status-queued { color: var(--muted); }
-.queue-status-generating { color: var(--gold-dim); }
-.queue-status-captioning { color: var(--gold-dim); }
-.queue-status-done { color: #2D7A4F; }
-.queue-status-error { color: #B0463A; }
+.queue-status-queued { color: var(--wadi-muted); }
+.queue-status-generating { color: var(--wadi-soft); }
+.queue-status-captioning { color: var(--wadi-soft); }
+.queue-status-done { color: var(--wadi-green); }
+.queue-status-error { color: var(--wadi-terracotta-deep); }
 
 @keyframes fadeIn {
   from { opacity: 0; }

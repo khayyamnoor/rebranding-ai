@@ -1,0 +1,42 @@
+/*
+ * Wadi design tokens — the single source of truth for the tool's look.
+ * Keep these values identical to the Wadi platform. Flat — NO gradients.
+ * (The generated brand deck in SlideCard is the user's brand artifact and is
+ *  intentionally NOT styled from these tokens.)
+ */
+:root {
+  /* Surfaces */
+  --wadi-canvas: #ECE3D2;       /* page / canvas */
+  --wadi-canvas-alt: #F2ECDD;   /* alt section background */
+  --wadi-card: #FAF6EC;         /* card surface */
+  --wadi-surface-2: #F4EEE0;    /* secondary surface */
+
+  /* Text */
+  --wadi-ink: #241C12;
+  --wadi-soft: #4E4536;
+  --wadi-muted: #8A7E68;
+
+  /* Lines */
+  --wadi-line: #D8CCB2;
+
+  /* Actions — green = the thing you click */
+  --wadi-green: #155446;
+  --wadi-green-hover: #0F4639;
+
+  /* Accent — terracotta = small highlight only */
+  --wadi-terracotta: #BB4A2C;
+  --wadi-terracotta-deep: #8F3A24;
+
+  /* Tint fills */
+  --wadi-tint-green: #DCE7E0;
+  --wadi-tint-terra: #F6E3DB;
+
+  /* Shape */
+  --wadi-radius: 14px;
+  --wadi-shadow: 0 1px 2px rgba(36, 28, 18, 0.05), 0 6px 18px rgba(36, 28, 18, 0.06);
+
+  /* Type */
+  --font-heading: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-body: 'Archivo', system-ui, sans-serif;
+  --font-mono: 'Spline Sans Mono', ui-monospace, 'SFMono-Regular', monospace;
+}
