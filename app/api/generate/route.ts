@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getGenAI } from '@/lib/genai';
 import { buildPrompt } from '@/lib/prompts';
 import { getAsset } from '@/lib/assets';
+import { getRequestTicket } from '@/lib/wadi';
 import type { AssetType, BrandProfile } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -16,6 +17,11 @@ interface GenerateBody {
 
 export async function POST(req: NextRequest) {
   try {
+    const ticket = await getRequestTicket(req);
+    if (!ticket) {
+      return NextResponse.json({ error: 'Open this tool from Wadi' }, { status: 401 });
+    }
+
     const body = (await req.json()) as GenerateBody;
     const { assetType, brandProfile, logoBase64, logoMimeType } = body;
     if (!assetType || !brandProfile || !logoBase64 || !logoMimeType) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGenAI } from '@/lib/genai';
 import { getAsset } from '@/lib/assets';
+import { getRequestTicket } from '@/lib/wadi';
 import type { AssetType, BrandProfile } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -42,6 +43,11 @@ function pickRegister(assetType: AssetType): (typeof REGISTERS)[number] {
 
 export async function POST(req: NextRequest) {
   try {
+    const ticket = await getRequestTicket(req);
+    if (!ticket) {
+      return NextResponse.json({ error: 'Open this tool from Wadi' }, { status: 401 });
+    }
+
     const body = (await req.json()) as CaptionBody;
     const { assetType, brandProfile } = body;
     if (!assetType || !brandProfile) {

@@ -11,7 +11,8 @@ PR reviews.
 ```mermaid
 graph LR
   subgraph Client[Client — React]
-    Page[app/page.tsx<br/>state machine]
+    Studio[components/Studio<br/>state machine]
+    WGate[components/WadiGate]
     Upload[components/UploadScreen]
     Gen[components/GenerationScreen]
     Result[components/ResultsScreen]
@@ -23,7 +24,8 @@ graph LR
     Queue[components/AssetQueue]
   end
 
-  subgraph Server[Server — Next.js Route Handlers]
+  subgraph Server[Server — Next.js]
+    Page[app/page.tsx<br/>server gate]
     Analyze[app/api/analyze/route.ts]
     Generate[app/api/generate/route.ts]
     Caption[app/api/caption/route.ts]
@@ -35,6 +37,7 @@ graph LR
     Assets[lib/assets.ts]
     Prompts[lib/prompts.ts]
     GenAI[lib/genai.ts]
+    Wadi[lib/wadi.ts<br/>server-only]
   end
 
   subgraph Ext[External]
@@ -42,17 +45,25 @@ graph LR
     GemImage[(gemini-3.1-flash-image-preview<br/>image generation)]
   end
 
-  Page --> Upload --> Zone
+  Page -- verify ticket --> Wadi
+  Page -- no/invalid ticket --> WGate
+  Page -- valid ticket --> Studio
+  Studio --> Upload --> Zone
   Upload --> Grid --> Assets
-  Page --> Gen --> Card
+  Studio --> Gen --> Card
   Gen --> Bar
   Gen --> Queue --> Assets
-  Page --> Result --> Slide
+  Studio --> Result --> Slide
   Slide --> Assets
-  Page -- fetch --> Analyze
-  Page -- fetch --> Generate
-  Page -- fetch --> Caption
-  Page -- fetch --> Copy
+  Studio -- "fetch + Bearer ticket" --> Analyze
+  Studio -- "fetch + Bearer ticket" --> Generate
+  Studio -- "fetch + Bearer ticket" --> Caption
+  Studio -- "fetch + Bearer ticket" --> Copy
+
+  Analyze -- verify ticket --> Wadi
+  Generate -- verify ticket --> Wadi
+  Caption -- verify ticket --> Wadi
+  Copy -- verify ticket --> Wadi
 
   Analyze --> GenAI --> GemFlash
   Generate --> GenAI --> GemImage
@@ -64,11 +75,17 @@ graph LR
 
   Card --> Types
   Queue --> Types
-  Page --> Types
+  Studio --> Types
   Slide --> Types
   Prompts --> Types
   Assets --> Types
 ```
+
+**Access gate:** `app/page.tsx` is a server component. It verifies the Wadi
+ticket (`?wadi_ticket=`) via `lib/wadi.ts` and renders either `WadiGate`
+(refused) or `Studio` (the tool). Every `/api/*` route re-verifies the ticket
+from the `Authorization: Bearer` header — that re-check is the real enforcement
+boundary; the page gate is UX + defense-in-depth.
 
 Read top-to-bottom. Anything pointing into a node is an inbound dependency; the
 arrow tail is the consumer.
@@ -79,8 +96,9 @@ arrow tail is the consumer.
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant P as page.tsx
+  participant W as Wadi
+  participant Pg as app/page.tsx (server gate)
+  participant P as Studio (client)
   participant A as /api/analyze
   participant G as /api/generate
   participant Cap as /api/caption
@@ -88,8 +106,11 @@ sequenceDiagram
   participant GF as gemini-2.5-flash
   participant GI as gemini-3.1-flash-image-preview
 
-  U->>P: drop logo + select assets
-  P->>A: POST multipart(logo)
+  W->>Pg: open /?wadi_ticket=<RS256 JWT>
+  Pg->>Pg: verifyTicket() — no/invalid → WadiGate, stop
+  Pg-->>P: render Studio(ticket)
+  Note over P,Cpy: every /api/* call carries Authorization: Bearer <ticket>;<br/>each route re-verifies it (401 if absent/expired/forged)
+  P->>A: POST multipart(logo) + Bearer ticket
   A->>GF: generateContent(image + JSON prompt)
   GF-->>A: brand profile JSON
   A-->>P: { profile, logoBase64, logoMimeType }
@@ -113,7 +134,7 @@ sequenceDiagram
     end
   end
 
-  P->>U: render ResultsScreen (slide deck)
+  P->>P: render ResultsScreen (slide deck)
 ```
 
 The image loop is sequential — `gemini-3.1-flash-image-preview` has tight rate
@@ -128,7 +149,9 @@ and the slide deck swaps skeleton blocks for real copy live.
 | File | Layer | Responsibility | Key deps |
 |------|-------|----------------|----------|
 | `app/layout.tsx` | client | HTML shell, fonts | — |
-| `app/page.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref | `components/*`, `lib/types` |
+| `app/page.tsx` | **server** | Wadi access gate. Reads `?wadi_ticket`, `verifyTicket()`; renders `WadiGate` (refused) or `Studio` (passes the raw ticket down). `export const dynamic = 'force-dynamic'`. | `lib/wadi`, `Studio`, `WadiGate` |
+| `components/Studio.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref. `authedFetch` attaches `Authorization: Bearer <ticket>` to every `/api/*` call. | `components/*`, `lib/types` |
+| `components/WadiGate.tsx` | client | "Please open this from Wadi" refusal screen — exposes no tool functionality. Styled minimally (Wadi tokens applied in Checkpoint D). | — |
 | `app/globals.css` | client | Design tokens + component classes | tailwind |
 | `components/UploadScreen.tsx` | client | Hero, upload zone, asset grid, validate-and-start. Copy is editorial ("Begin with the mark.", "The mark", "The world", "Begin") — no marketing language about "AI" or "mockups". | `UploadZone`, `AssetGrid` |
 | `components/UploadZone.tsx` | client | Drag/drop + click-to-browse | — |
@@ -146,7 +169,13 @@ and the slide deck swaps skeleton blocks for real copy live.
 | `lib/types.ts` | shared | `AssetType` (11 entries), `SYSTEM_ASSET_TYPES`, `isSystemAsset`, `BrandProfile`, `AssetJob`, `AssetStatus` (`queued|generating|captioning|done|error`), `CopyContent` (sparse fragment shape), `ColorEntry`, `StrategicPillar` | — |
 | `lib/assets.ts` | shared | Asset metadata: label, aspect ratio. `zone: {x,y,w,h}` is **legacy/dead** — left in the shape but no longer read (compositing was removed). | `lib/types` |
 | `lib/prompts.ts` | shared | `buildPrompt(assetType, brand)` — one switch arm per asset describing how the logo should be natively integrated (embroidered, foil-stamped, letterpressed, etc). Prompt voice is **editorial / architectural / atmospheric** — single sensory anchor, generous negative space, no commercial product-shot framing. The `SUFFIX` negative list rejects bokeh, hero-shot lighting, busy compositions, generic stock feel. `pick()` provides safe fallbacks for empty profile arrays. | `lib/types` |
-| `lib/genai.ts` | server-only | Lazy-initialized `GoogleGenAI` client; throws if `GEMINI_API_KEY` is missing | `@google/genai` |
+| `lib/genai.ts` | server-only | Lazy-initialized `GoogleGenAI` client; throws if `GEMINI_API_KEY` is missing. (Replaced by the Wadi AI proxy in Checkpoint C.) | `@google/genai` |
+| `lib/wadi.ts` | server-only | Verify Wadi RS256 tickets via `WADI_JWT_PUBLIC_KEY` (pins `algorithms:['RS256']`, checks `iss`/`aud`/`exp`, fails closed). `verifyTicket`, `ticketFromRequest`, `getRequestTicket`. | `jose` |
+
+**All four `/api/*` routes** call `getRequestTicket(req)` as their first step
+and return `401` if the ticket is absent, expired, or forged — this is the
+server-side enforcement boundary. Dev/test tickets: `scripts/mint-ticket.mjs`
+(`npm run ticket`).
 
 ---
 
@@ -213,6 +242,7 @@ Walk the code in this order — each step's context is set up by the prior one.
 
 | Concern | Where | Why it matters |
 |---------|-------|----------------|
+| Wadi access gate | `lib/wadi.ts`, `app/page.tsx`, all `/api/*` | The whole paywall depends on this. `jwtVerify` MUST stay pinned to `algorithms:['RS256']` (prevents `alg:none` and HS256-confusion forgery). Every API route must verify independently — the page gate alone is bypassable by calling the API directly. `verifyTicket` fails closed (returns null on any error, incl. missing key). Never log the raw ticket. |
 | Editorial voice contract (copy) | `app/api/copy/route.ts`, `app/api/caption/route.ts` | The deck's "luxury, human-directed" feel lives in these prompts. The forbidden-words list and word caps are the contract — they have already been tuned to suppress the "[object] embodies [concept] through [feature]" failure mode. Loosening them regresses the whole product. |
 | Editorial voice contract (image prompts) | `lib/prompts.ts` `bodyFor()` + `SUFFIX` | The image model's natural failure mode is commercial product photography ("hero shot, 3/4 angle, bokeh"). The prompts were rewritten to editorial/architectural language with a single sensory anchor per asset, and the `SUFFIX` explicitly bans the failure mode vocabulary. Reverting to product-shot language regresses imagery to stock-luxury aesthetic. |
 | Caption register rotation | `app/api/caption/route.ts` `pickRegister()` | Determinism is intentional: same asset → same register, so a deck of 4 captions stays varied without per-call state. If you switch to random selection, captions can drift to a single register on a given run. |
@@ -235,8 +265,13 @@ Walk the code in this order — each step's context is set up by the prior one.
 
 - **Client → Server:** only via `fetch('/api/...')`. No server imports leak
   into client components.
-- **Server-only modules:** `lib/genai.ts`, all `app/api/*` — never imported
-  from `components/*` or `app/page.tsx`.
+- **Server-only modules:** `lib/genai.ts`, `lib/wadi.ts` (marked
+  `import 'server-only'`), all `app/api/*`. `lib/wadi.ts` is imported by the
+  server component `app/page.tsx` and by the API routes — never by a client
+  component.
+- **Access boundary:** unauthenticated requests get the `WadiGate` (page) or a
+  `401` (API). The raw ticket flows server→`Studio` as a prop and back up only
+  in the `Authorization` header — it is never persisted or logged.
 - **Shared modules:** `lib/types.ts`, `lib/assets.ts`, `lib/prompts.ts` are
   pure (no I/O, no `fetch`, no `process.env`) and safe on either side.
 - **No persistence:** nothing writes to disk or a database. Logos and

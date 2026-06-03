@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGenAI } from '@/lib/genai';
+import { getRequestTicket } from '@/lib/wadi';
 import type { BrandProfile, CopyContent } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -25,6 +26,11 @@ function stripJsonFences(text: string): string {
 
 export async function POST(req: NextRequest) {
   try {
+    const ticket = await getRequestTicket(req);
+    if (!ticket) {
+      return NextResponse.json({ error: 'Open this tool from Wadi' }, { status: 401 });
+    }
+
     const body = (await req.json()) as CopyBody;
     const { brandProfile, logoBase64, logoMimeType } = body;
     if (!brandProfile) {
