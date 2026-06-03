@@ -12,10 +12,10 @@ import type { NextRequest } from 'next/server';
  */
 
 // These must match what the live Wadi platform stamps into its tickets.
-// Observed from a real Wadi ticket: iss="wadi", aud=<tool label> (e.g.
-// "diagnostics"). Configurable so the same code matches each tool's label.
+// iss="wadi"; aud = THIS tool's unique registry id. "diagnostics" is Wadi's
+// test-only label and must never be accepted by a real tool.
 export const WADI_TICKET_ISSUER = process.env.WADI_TICKET_ISSUER ?? 'wadi';
-export const WADI_TICKET_AUDIENCE = process.env.WADI_TICKET_AUDIENCE ?? 'diagnostics';
+export const WADI_TICKET_AUDIENCE = process.env.WADI_TICKET_AUDIENCE ?? 'brandvista';
 
 export interface WadiTicket {
   /** Wadi user id */
@@ -29,18 +29,35 @@ export interface WadiTicket {
   expiresAt: number;
 }
 
-let publicKeyPromise: Promise<CryptoKey> | null = null;
+let keysPromise: Promise<CryptoKey[]> | null = null;
 
-function getPublicKey(): Promise<CryptoKey> {
-  const pem = process.env.WADI_JWT_PUBLIC_KEY;
-  if (!pem) {
-    throw new Error('WADI_JWT_PUBLIC_KEY environment variable is not set');
+// Env vars store the PEM with escaped newlines; restore real newlines.
+function importPem(pem: string): Promise<CryptoKey> {
+  return importSPKI(pem.replace(/\\n/g, '\n'), 'RS256');
+}
+
+/**
+ * Trust anchors used to verify tickets. The real Wadi public key is always
+ * trusted. A DEV-only key may also be trusted for local testing before the Wadi
+ * app registry can mint tickets for this tool — but NEVER in production.
+ */
+function getPublicKeys(): Promise<CryptoKey[]> {
+  if (keysPromise) return keysPromise;
+  const pems: string[] = [];
+  if (process.env.WADI_JWT_PUBLIC_KEY) pems.push(process.env.WADI_JWT_PUBLIC_KEY);
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    process.env.WADI_DEV_JWT_PUBLIC_KEY
+  ) {
+    pems.push(process.env.WADI_DEV_JWT_PUBLIC_KEY);
   }
-  if (!publicKeyPromise) {
-    // Env vars store the PEM with escaped newlines; restore real newlines.
-    publicKeyPromise = importSPKI(pem.replace(/\\n/g, '\n'), 'RS256');
+  if (pems.length === 0) {
+    return Promise.reject(
+      new Error('WADI_JWT_PUBLIC_KEY environment variable is not set'),
+    );
   }
-  return publicKeyPromise;
+  keysPromise = Promise.all(pems.map(importPem));
+  return keysPromise;
 }
 
 function toTicket(payload: JWTPayload): WadiTicket | null {
@@ -65,17 +82,25 @@ export async function verifyTicket(
   token: string | null | undefined,
 ): Promise<WadiTicket | null> {
   if (!token) return null;
+  let keys: CryptoKey[];
   try {
-    const key = await getPublicKey();
-    const { payload } = await jwtVerify(token, key, {
-      algorithms: ['RS256'],
-      issuer: WADI_TICKET_ISSUER,
-      audience: WADI_TICKET_AUDIENCE,
-    });
-    return toTicket(payload);
+    keys = await getPublicKeys();
   } catch {
-    return null;
+    return null; // misconfigured server → fail closed
   }
+  for (const key of keys) {
+    try {
+      const { payload } = await jwtVerify(token, key, {
+        algorithms: ['RS256'],
+        issuer: WADI_TICKET_ISSUER,
+        audience: WADI_TICKET_AUDIENCE,
+      });
+      return toTicket(payload);
+    } catch {
+      // wrong key / invalid / expired — try the next trust anchor
+    }
+  }
+  return null;
 }
 
 /** Pull the ticket out of an API request's `Authorization: Bearer <ticket>` header. */

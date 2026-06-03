@@ -50,7 +50,7 @@ const expired = args.includes('--expired');
 // Match the real Wadi format (iss="wadi", aud=<tool label>). Configurable so
 // dev tickets line up with what this tool expects.
 const issuer = env.WADI_TICKET_ISSUER || 'wadi';
-const audience = env.WADI_TICKET_AUDIENCE || 'diagnostics';
+const audience = env.WADI_TICKET_AUDIENCE || 'brandvista';
 
 // NOTE: this signs with the DEV private key. It only verifies if the app's
 // WADI_JWT_PUBLIC_KEY is the matching DEV public key. Once the real Wadi public

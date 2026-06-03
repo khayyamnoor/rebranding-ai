@@ -89,8 +89,8 @@ A Wadi ticket is a **JWT signed with RS256**. Observed real example:
 - **Header:** `{ "alg": "RS256", "typ": "JWT" }`
 - **Claims:**
   - `iss` = `"wadi"`               (issuer — verified)
-  - `aud` = the tool's label, e.g. `"diagnostics"` (audience — verified; scopes
-    a ticket to one tool. Set `WADI_TICKET_AUDIENCE` to this tool's label.)
+  - `aud` = this tool's unique registry id (audience — verified; scopes a ticket
+    to one tool). **This tool (BrandVista) = `brandvista`.**
   - `sub` = Wadi user id (UUID string, required)
   - `plan` = plan/tier string (seen: `"free"`)
   - `ver` = ticket format version (seen: `1`)
@@ -108,10 +108,25 @@ A Wadi ticket is a **JWT signed with RS256**. Observed real example:
 installed in `.env.local` and verifies real tickets (proven). It is safe to
 expose (verify-only). The matching private key lives only in Wadi.
 
-**Open question to confirm with founder:** the sample ticket's `aud` was
-`"diagnostics"`. Confirm that is the label Wadi assigns to THIS tool
-(BrandVista), vs. another tool — `WADI_TICKET_AUDIENCE` must equal this tool's
-own label so tickets minted for other tools are rejected.
+## Tool-id (audience) convention — CONTRACT
+
+- Every Wadi tool has one **stable, unique tool-id**, assigned in the Wadi app
+  registry, stamped into the ticket's `aud`. Each app accepts **only its own**
+  id — this is what stops a ticket for one tool from opening another.
+- **`diagnostics` is reserved for Wadi's internal self-test** (throwaway test
+  tickets). It is deliberately not a real tool and must **never** be accepted by
+  a production tool.
+- **This tool (BrandVista) → `aud` = `brandvista`.** Set `WADI_TICKET_AUDIENCE`
+  identically on both sides (this app + the Wadi registry entry).
+
+## Dev-only second verify key (local testing convenience)
+
+The Wadi registry can't mint `brandvista` tickets yet, so for LOCAL dev a second
+trust anchor is supported: `WADI_DEV_JWT_PUBLIC_KEY`. `verifyTicket` trusts it
+**only when `NODE_ENV !== 'production'`**. `scripts/mint-ticket.mjs` signs
+`brandvista` dev tickets with the matching `WADI_DEV_JWT_PRIVATE_KEY` so the tool
+can be exercised locally. On Vercel (`NODE_ENV=production`) these dev vars are
+absent and only the real Wadi public key is trusted.
 
 ## AI proxy spec (Wadi must build this — used in Checkpoint C, tested later)
 
