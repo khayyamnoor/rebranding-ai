@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGenAI } from '@/lib/genai';
-import { getRequestTicket } from '@/lib/wadi-ticket';
+import { getRequestTicket, ticketFromRequest } from '@/lib/wadi-ticket';
+import { callGemini, responseText, WadiProxyError, proxyErrorBody } from '@/lib/wadi-ai';
 import type { BrandProfile } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     if (!ticket) {
       return NextResponse.json({ error: 'Open this tool from Wadi' }, { status: 401 });
     }
+    const token = ticketFromRequest(req) as string;
 
     const formData = await req.formData();
     const file = formData.get('logo');
@@ -50,8 +51,7 @@ export async function POST(req: NextRequest) {
     const base64 = Buffer.from(arrayBuffer).toString('base64');
     const mimeType = file.type || 'image/png';
 
-    const ai = getGenAI();
-    const response = await ai.models.generateContent({
+    const response = await callGemini(token, {
       model: 'gemini-2.5-flash',
       contents: [
         {
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    const raw = response.text ?? '';
+    const raw = responseText(response);
     const cleaned = stripJsonFences(raw);
 
     let profile: BrandProfile;
@@ -79,6 +79,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ profile, logoBase64: base64, logoMimeType: mimeType });
   } catch (err) {
+    if (err instanceof WadiProxyError) {
+      const { status, body } = proxyErrorBody(err);
+      return NextResponse.json(body, { status });
+    }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: msg }, { status: 500 });
   }

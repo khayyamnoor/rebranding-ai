@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { UploadScreen } from '@/components/UploadScreen';
 import { GenerationScreen } from '@/components/GenerationScreen';
 import { ResultsScreen } from '@/components/ResultsScreen';
+import { NeedsKeyScreen } from '@/components/NeedsKeyScreen';
 import { getWadiTicket } from '@/components/WadiGate';
 import type {
   AssetJob,
@@ -28,6 +29,8 @@ export function Studio() {
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
   const [logoMimeType, setLogoMimeType] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // True when Wadi reports the user has no Gemini key yet (proxy NO_KEY).
+  const [needsKey, setNeedsKey] = useState(false);
   const cancelled = useRef(false);
 
   // Every request to this tool's own API carries the current Wadi ticket, which
@@ -94,7 +97,15 @@ export function Studio() {
             }),
           });
           if (!genRes.ok) {
-            const e = await genRes.json().catch(() => ({}));
+            const e = (await genRes.json().catch(() => ({}))) as {
+              error?: string;
+              code?: string;
+            };
+            if (e.code === 'NO_KEY') {
+              cancelled.current = true;
+              setNeedsKey(true);
+              return;
+            }
             throw new Error(e.error ?? 'Generation failed');
           }
           const genData = (await genRes.json()) as { imageBase64: string };
@@ -134,6 +145,7 @@ export function Studio() {
     async (logoFile: File, assetTypes: AssetType[]) => {
       cancelled.current = false;
       setErrorMessage(null);
+      setNeedsKey(false);
       setProfile(null);
       setCopyContent(null);
       setJobs(assetTypes.map((t) => ({ type: t, status: 'queued' })));
@@ -147,7 +159,14 @@ export function Studio() {
           body: formData,
         });
         if (!analyzeRes.ok) {
-          const e = await analyzeRes.json().catch(() => ({}));
+          const e = (await analyzeRes.json().catch(() => ({}))) as {
+            error?: string;
+            code?: string;
+          };
+          if (e.code === 'NO_KEY') {
+            setNeedsKey(true);
+            return;
+          }
           throw new Error(e.error ?? 'Failed to analyze logo');
         }
         const analyzeData = (await analyzeRes.json()) as {
@@ -201,7 +220,19 @@ export function Studio() {
     setErrorMessage(null);
   }, []);
 
+  const handleRetryKey = useCallback(() => {
+    cancelled.current = true;
+    setNeedsKey(false);
+    setPhase('upload');
+    setJobs([]);
+    setErrorMessage(null);
+  }, []);
+
   useEffect(() => () => { cancelled.current = true; }, []);
+
+  if (needsKey) {
+    return <NeedsKeyScreen onRetry={handleRetryKey} />;
+  }
 
   return (
     <main>

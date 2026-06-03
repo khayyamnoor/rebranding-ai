@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGenAI } from '@/lib/genai';
 import { buildPrompt } from '@/lib/prompts';
 import { getAsset } from '@/lib/assets';
-import { getRequestTicket } from '@/lib/wadi-ticket';
+import { getRequestTicket, ticketFromRequest } from '@/lib/wadi-ticket';
+import { callGemini, responseImage, WadiProxyError, proxyErrorBody } from '@/lib/wadi-ai';
 import type { AssetType, BrandProfile } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     if (!ticket) {
       return NextResponse.json({ error: 'Open this tool from Wadi' }, { status: 401 });
     }
+    const token = ticketFromRequest(req) as string;
 
     const body = (await req.json()) as GenerateBody;
     const { assetType, brandProfile, logoBase64, logoMimeType } = body;
@@ -34,9 +35,8 @@ export async function POST(req: NextRequest) {
     }
 
     const builtPrompt = buildPrompt(assetType, brandProfile);
-    const ai = getGenAI();
 
-    const response = await ai.models.generateContent({
+    const response = await callGemini(token, {
       model: 'gemini-3.1-flash-image-preview',
       contents: [
         {
@@ -55,13 +55,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    let imageBase64: string | null = null;
-    for (const part of response.candidates?.[0]?.content?.parts ?? []) {
-      if (part.inlineData?.data) {
-        imageBase64 = part.inlineData.data;
-        break;
-      }
-    }
+    const imageBase64 = responseImage(response);
 
     if (!imageBase64) {
       return NextResponse.json(
@@ -72,6 +66,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ imageBase64 });
   } catch (err) {
+    if (err instanceof WadiProxyError) {
+      const { status, body } = proxyErrorBody(err);
+      return NextResponse.json(body, { status });
+    }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: msg }, { status: 500 });
   }

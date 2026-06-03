@@ -26,8 +26,8 @@ drift. Don't defer it. Triggers:
   sections 5–7.
 - **Type union changed** (`AssetType`, `AssetStatus`, new shared interface) —
   update section 3 and the extension recipe in section 7.
-- **Env var renamed** — update section 5 (API key exposure row) and
-  section 3 (`lib/genai.ts` row).
+- **Env var renamed** — update section 5 (AI key handling / Wadi access-gate
+  rows) and section 3 (`lib/wadi-ai.ts` / `lib/wadi-ticket.ts` rows).
 - **Invariant changed** (e.g. cancellation semantics, exhaustive-switch
   guarantee) — update section 5.
 - **Boundary changed** (server-only module imported from client, new shared
@@ -154,18 +154,27 @@ key is trusted.
 - **No breakout:** the tool never redirects, opens new tabs, or navigates the
   top window.
 
-## AI proxy spec (Wadi must build this — used in Checkpoint C, tested later)
+## AI proxy spec (Wadi must build this endpoint) — Job 4 / Checkpoint C
+
+**Call path decision:** AI requests go from **BrandVista's server** → Wadi proxy
+(NOT browser → proxy), so the tuned prompts stay private. The user's key never
+reaches this app. Built in `lib/wadi-ai.ts` (`callGemini`).
 
 Generic Gemini passthrough so every app reuses one endpoint:
 
-- App → `POST {WADI_AI_PROXY_URL}` with `Authorization: Bearer <ticket>` and the
-  Gemini request body. Wadi verifies the ticket, looks up the user's Gemini key,
-  forwards to Google, returns Google's raw response.
-- Error contract:
-  - `401` — missing/invalid ticket → app shows the Wadi gate.
-  - `402`/`403` (no key set for the provider) → app shows "add your Gemini key
-    in Wadi".
-  - upstream key rejected → "that key didn't work — check it in Wadi".
+- **Request:** `POST {WADI_AI_PROXY_URL}` (default `<NEXT_PUBLIC_WADI_ORIGIN>/api/ai/proxy`)
+  with `Authorization: Bearer <ticket>` and JSON body
+  `{ provider: "gemini", model, contents, config }` (the `@google/genai`
+  `generateContent` params). Wadi verifies the ticket, injects that user's
+  Gemini key, calls Google, returns Google's response JSON.
+- **Responses BrandVista expects:**
+  - `200` + Google GenAI response JSON (this app reads
+    `candidates[0].content.parts[]` for text/image).
+  - `401` → invalid ticket.
+  - `402`/`403` → user has no Gemini key → app shows "Add your Gemini key in Wadi".
+  - `400`/`422` with `{code:"KEY_REJECTED", message}` → provider rejected the key
+    → app shows "that key didn't work — check it in Wadi".
+- This app no longer holds `GEMINI_API_KEY` and no longer imports `@google/genai`.
 
 ## Environment variables
 
@@ -175,9 +184,9 @@ Generic Gemini passthrough so every app reuses one endpoint:
 | `NEXT_PUBLIC_WADI_ORIGIN` | this app (Vercel) | no | the only origin allowed to embed the tool / send tickets |
 | `NEXT_PUBLIC_WADI_DEV_PUBLIC_KEY` | **local `.env.local` only** | no | DEV-only second verify key (base64). Ignored in prod. |
 | `WADI_DEV_JWT_PRIVATE_KEY` | **local `.env.local` only** | YES | DEV-only; lets `scripts/mint-ticket.mjs` mint test tickets. Never set in prod. |
-| `GEMINI_API_KEY` | this app (Vercel) | YES | legacy single shared key; removed at Checkpoint C |
+| `WADI_AI_PROXY_URL` | this app (Vercel) | no | Wadi AI proxy endpoint. Defaults to `<NEXT_PUBLIC_WADI_ORIGIN>/api/ai/proxy`. Local dev → `http://localhost:4100` (mock). |
 
-(Job-4 will add the Wadi AI proxy URL at Checkpoint C.)
+`GEMINI_API_KEY` is **removed** — this app no longer calls Gemini directly.
 
 **Key pair:** Wadi holds the RSA **private** key (mints tickets); this app holds
 the **public** key (verifies). Same pair reused across all apps. Values come
@@ -201,5 +210,10 @@ a valid signed ticket. Flags: `--no-key` (omit gemini from `keys`),
   posts `wadi-tool/resize` height for smooth resizing; no redirects/new-tab/
   breakout. Local harness: `npm run embed` (separate-origin parent on :4000 that
   performs the real handshake). Responsive polish lands with the restyle (D).
-- [ ] C — BYOK via Wadi proxy (remove `GEMINI_API_KEY` dependency).
+- [x] **C — BYOK via Wadi proxy.** `lib/wadi-ai.ts` (`callGemini`) routes all AI
+  through Wadi on the user's key; the four API routes use it and map proxy
+  errors (NO_KEY → 402, KEY_REJECTED → 400). `GEMINI_API_KEY` + `@google/genai`
+  removed. `components/NeedsKeyScreen.tsx` shows "Add your Gemini key in Wadi" on
+  NO_KEY. Dev mock: `npm run mock-proxy` (`MODE=no_key|reject`). Live generation
+  tested once Wadi's real proxy exists (deferred, per founder).
 - [ ] D — Wadi design tokens (flat, no gradients).

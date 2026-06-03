@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGenAI } from '@/lib/genai';
 import { getAsset } from '@/lib/assets';
-import { getRequestTicket } from '@/lib/wadi-ticket';
+import { getRequestTicket, ticketFromRequest } from '@/lib/wadi-ticket';
+import { callGemini, responseText, WadiProxyError, proxyErrorBody } from '@/lib/wadi-ai';
 import type { AssetType, BrandProfile } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     if (!ticket) {
       return NextResponse.json({ error: 'Open this tool from Wadi' }, { status: 401 });
     }
+    const token = ticketFromRequest(req) as string;
 
     const body = (await req.json()) as CaptionBody;
     const { assetType, brandProfile } = body;
@@ -81,14 +82,12 @@ ${materials ? `- Materials present: ${materials}` : ''}
 
 Return only the caption itself. Nothing else. No label, no prefix.`;
 
-    const ai = getGenAI();
-    const response = await ai.models.generateContent({
+    const response = await callGemini(token, {
       model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
 
-    const description = (response.text ?? '')
-      .trim()
+    const description = responseText(response)
       .replace(/^["“”']+|["“”']+$/g, '')
       .trim();
     if (!description) {
@@ -96,6 +95,10 @@ Return only the caption itself. Nothing else. No label, no prefix.`;
     }
     return NextResponse.json({ description });
   } catch (err) {
+    if (err instanceof WadiProxyError) {
+      const { status, body } = proxyErrorBody(err);
+      return NextResponse.json(body, { status });
+    }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: msg }, { status: 500 });
   }

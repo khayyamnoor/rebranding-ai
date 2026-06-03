@@ -8,10 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "ticket": "node scripts/mint-ticket.mjs",
-    "embed": "node scripts/embed-serve.mjs"
+    "embed": "node scripts/embed-serve.mjs",
+    "mock-proxy": "node scripts/mock-proxy.mjs"
   },
   "dependencies": {
-    "@google/genai": "^1.52.0",
     "jose": "^6.2.3",
     "next": "14.2.18",
     "react": "^18.3.1",

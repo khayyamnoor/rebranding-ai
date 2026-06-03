@@ -37,11 +37,12 @@ graph LR
     Types[lib/types.ts]
     Assets[lib/assets.ts]
     Prompts[lib/prompts.ts]
-    GenAI[lib/genai.ts]
+    WadiAI[lib/wadi-ai.ts<br/>server-only proxy client]
     Wadi[lib/wadi-ticket.ts<br/>isomorphic verifier]
   end
 
   subgraph Ext[External]
+    Proxy[(Wadi AI proxy<br/>injects user's key)]
     GemFlash[(gemini-2.5-flash<br/>text + vision)]
     GemImage[(gemini-3.1-flash-image-preview<br/>image generation)]
   end
@@ -68,13 +69,16 @@ graph LR
   Caption -- verify ticket --> Wadi
   Copy -- verify ticket --> Wadi
 
-  Analyze --> GenAI --> GemFlash
-  Generate --> GenAI --> GemImage
+  Analyze --> WadiAI
+  Generate --> WadiAI
+  Caption --> WadiAI
+  Copy --> WadiAI
+  WadiAI -- "POST + Bearer ticket" --> Proxy
+  Proxy --> GemFlash
+  Proxy --> GemImage
   Generate --> Prompts
   Generate --> Assets
-  Caption --> GenAI
   Caption --> Assets
-  Copy --> GenAI
 
   Card --> Types
   Queue --> Types
@@ -108,8 +112,7 @@ sequenceDiagram
   participant G as /api/generate
   participant Cap as /api/caption
   participant Cpy as /api/copy
-  participant GF as gemini-2.5-flash
-  participant GI as gemini-3.1-flash-image-preview
+  participant Px as Wadi AI proxy (injects user's Gemini key → Google)
 
   W->>Gate: embed iframe (no ticket in URL)
   Gate->>W: postMessage {source:'wadi-tool', type:'ready'}
@@ -118,24 +121,24 @@ sequenceDiagram
   Gate-->>P: render Studio (ticket stored for getWadiTicket())
   Note over P,Cpy: every /api/* call carries Authorization: Bearer <ticket>;<br/>each route re-verifies it (401 if absent/expired/forged)
   P->>A: POST multipart(logo) + Bearer ticket
-  A->>GF: generateContent(image + JSON prompt)
-  GF-->>A: brand profile JSON
+  A->>Px: callGemini(2.5-flash, image+prompt) + Bearer ticket
+  Px-->>A: brand profile JSON  (402 NO_KEY → NeedsKeyScreen)
   A-->>P: { profile, logoBase64, logoMimeType }
 
   par copy track (parallel)
     P->>Cpy: POST { brandProfile, logo }
-    Cpy->>GF: generateContent(image + editorial JSON prompt)
-    GF-->>Cpy: sparse CopyContent
+    Cpy->>Px: callGemini(2.5-flash, editorial prompt)
+    Px-->>Cpy: sparse CopyContent
     Cpy-->>P: { content }
   and image track (sequential per asset)
     loop for each selected asset
       P->>G: POST { assetType, brandProfile, logo }
-      G->>GI: generateContent(logo + prompt, aspectRatio)
-      GI-->>G: imageBytes (base64)
+      G->>Px: callGemini(3.1-flash-image, logo+prompt, aspectRatio)
+      Px-->>G: imageBytes (base64)
       G-->>P: { imageBase64 }
       P->>Cap: POST { assetType, brandProfile }
-      Cap->>GF: generateContent(register-rotated prompt)
-      GF-->>Cap: short editorial fragment
+      Cap->>Px: callGemini(2.5-flash, register-rotated prompt)
+      Px-->>Cap: short editorial fragment
       Cap-->>P: { description }
       P->>P: mark job done
     end
@@ -157,9 +160,10 @@ and the slide deck swaps skeleton blocks for real copy live.
 |------|-------|----------------|----------|
 | `app/layout.tsx` | server | HTML shell, fonts; wraps the app in `<WadiGate>` (the access gate). | `WadiGate` |
 | `app/page.tsx` | server | Just renders `<Studio/>` — access is handled by `WadiGate` (layout) + server API checks. | `Studio` |
-| `components/Studio.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref. `authedFetch` attaches `Authorization: Bearer <getWadiTicket()>` to every `/api/*` call. No props. | `components/*`, `lib/wadi-ticket`, `lib/types` |
+| `components/Studio.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref. `authedFetch` attaches `Authorization: Bearer <getWadiTicket()>` to every `/api/*` call. No props. On a `NO_KEY` proxy response it renders `NeedsKeyScreen`. | `components/*`, `lib/wadi-ticket`, `lib/types` |
 | `components/WadiGate.tsx` | client | Access gate. postMessage handshake (`ready` → receive `ticket`), verifies via `lib/wadi-ticket`, renders the tool only when valid (else "Open this from Wadi"). Exposes `getWadiTicket()`. Mounts `FrameBridge`. Ignores ticket messages not from `NEXT_PUBLIC_WADI_ORIGIN`. | `lib/wadi-ticket`, `FrameBridge` |
 | `components/FrameBridge.tsx` | client | Renders nothing. When embedded, posts `{source:'wadi-tool',type:'resize',height}` to the parent via `ResizeObserver` (prod targets `NEXT_PUBLIC_WADI_ORIGIN`, dev `'*'`). | — |
+| `components/NeedsKeyScreen.tsx` | client | Friendly "Add your Gemini key in Wadi" state, shown when the proxy returns `NO_KEY`. "Try again" button re-runs. Styled minimally (Wadi tokens in D). | — |
 | `next.config.js` | server cfg | `headers()` sets `Content-Security-Policy: frame-ancestors 'self' $NEXT_PUBLIC_WADI_ORIGIN` (+ `localhost:*` in dev) — only Wadi may embed. Also `nosniff`, `Referrer-Policy`. No `X-Frame-Options`. | — |
 | `app/globals.css` | client | Design tokens + component classes | tailwind |
 | `components/UploadScreen.tsx` | client | Hero, upload zone, asset grid, validate-and-start. Copy is editorial ("Begin with the mark.", "The mark", "The world", "Begin") — no marketing language about "AI" or "mockups". | `UploadZone`, `AssetGrid` |
@@ -171,14 +175,14 @@ and the slide deck swaps skeleton blocks for real copy live.
 | `components/AssetQueue.tsx` | client | Per-asset row with status label + color. Labels are atmospheric (`Waiting`, `Rendering…`, `Inscribing…`, `✓`) not transactional. | `lib/assets`, `lib/types` |
 | `components/ResultsScreen.tsx` | client | Slide-deck shell: carousel, keyboard nav, thumbnail strip, `window.print()` export via portal | `SlideCard`, `lib/types` |
 | `components/SlideCard.tsx` | client | Renders every slide kind (`cover`, `atmosphere`, `logoObjective`, `mark`, `strategicIntent`, `safeZone`, `primaryColor`, `palette`, `displayFont`, `bodyFont`, `pattern`, `interlude`, `assetApplication`, `closing`). `atmosphere`/`mark`/`interlude` are silent pause slides (no copy). `assetApplication` picks one of 3 layout variants by deterministic `assetVariant(type)` hash. `TwoPanel` accepts a `split` prop and `LogoCenter` accepts `align`/`scale`/`background` for per-slide composition variance. Includes WCAG contrast helpers and `MonogramWatermark` (used by `strategicIntent` so the logo "disappears" into a tonal seal). **BOX-reference structural contract:** dense system pages (`logoObjective`, `strategicIntent`, `safeZone`, `primaryColor`, `palette`, `pattern`) are unified to `split="25% 75%"` (narrow rationale, vast artifact field). Color slides treat color as material — full-bleed bands with tone-on-tone serif-caps captions at bottom-left (opacity 0.85), never swatch chips with hex chrome. Type specimens (`displayFont`, `bodyFont`) use the `TypeSpecimenCredit` device (tiny tracked sans-caps label + horizontal rule) on a sand ground, no header chip. Pattern fills the right 75% on sand at large scale (120px tile) with a column-flute graphic on the far-right edge. | `lib/types`, `lib/assets` |
-| `app/api/analyze/route.ts` | server | Multipart → base64 → `gemini-2.5-flash` (vision) → strip fences → parse `BrandProfile` JSON → return `{ profile, logoBase64, logoMimeType }` | `lib/genai` |
-| `app/api/generate/route.ts` | server | Build per-asset prompt, call `gemini-3.1-flash-image-preview` with logo as `inlineData` and the right aspect ratio; model integrates the logo natively into the scene. Returns base64 PNG. | `lib/genai`, `lib/prompts`, `lib/assets` |
-| `app/api/caption/route.ts` | server | One-line editorial caption per asset via `gemini-2.5-flash`. Picks a register (`fragment` / `sensory` / `place` / `material`) deterministically from `assetType` hash so the deck has rhythmic variety. Forbidden-words list enforces restraint. | `lib/genai`, `lib/assets` |
-| `app/api/copy/route.ts` | server | Brand book `CopyContent` JSON via `gemini-2.5-flash` (logo passed as `inlineData`). Hard word caps per field; prohibits the "[object] embodies [concept] through [feature]" formula. | `lib/genai` |
+| `app/api/analyze/route.ts` | server | Verifies ticket → multipart → base64 → `callGemini(2.5-flash)` (vision) via Wadi proxy → strip fences → parse `BrandProfile` JSON. Maps proxy errors (NO_KEY→402, KEY_REJECTED→400). | `lib/wadi-ai`, `lib/wadi-ticket` |
+| `app/api/generate/route.ts` | server | Verifies ticket → build per-asset prompt → `callGemini(3.1-flash-image)` via Wadi proxy with logo `inlineData` + aspect ratio → `responseImage()`. | `lib/wadi-ai`, `lib/wadi-ticket`, `lib/prompts`, `lib/assets` |
+| `app/api/caption/route.ts` | server | Verifies ticket → one-line editorial caption via `callGemini(2.5-flash)`. Deterministic register rotation; forbidden-words list. | `lib/wadi-ai`, `lib/wadi-ticket`, `lib/assets` |
+| `app/api/copy/route.ts` | server | Verifies ticket → brand-book `CopyContent` JSON via `callGemini(2.5-flash)`. Hard word caps; prohibits the "[object] embodies [concept] through [feature]" formula. | `lib/wadi-ai`, `lib/wadi-ticket` |
 | `lib/types.ts` | shared | `AssetType` (11 entries), `SYSTEM_ASSET_TYPES`, `isSystemAsset`, `BrandProfile`, `AssetJob`, `AssetStatus` (`queued|generating|captioning|done|error`), `CopyContent` (sparse fragment shape), `ColorEntry`, `StrategicPillar` | — |
 | `lib/assets.ts` | shared | Asset metadata: label, aspect ratio. `zone: {x,y,w,h}` is **legacy/dead** — left in the shape but no longer read (compositing was removed). | `lib/types` |
 | `lib/prompts.ts` | shared | `buildPrompt(assetType, brand)` — one switch arm per asset describing how the logo should be natively integrated (embroidered, foil-stamped, letterpressed, etc). Prompt voice is **editorial / architectural / atmospheric** — single sensory anchor, generous negative space, no commercial product-shot framing. The `SUFFIX` negative list rejects bokeh, hero-shot lighting, busy compositions, generic stock feel. `pick()` provides safe fallbacks for empty profile arrays. | `lib/types` |
-| `lib/genai.ts` | server-only | Lazy-initialized `GoogleGenAI` client; throws if `GEMINI_API_KEY` is missing. (Replaced by the Wadi AI proxy in Checkpoint C.) | `@google/genai` |
+| `lib/wadi-ai.ts` | server-only | BYOK proxy client. `callGemini(ticket, {model,contents,config})` POSTs to `WADI_AI_PROXY_URL` with `Authorization: Bearer <ticket>`; Wadi injects the user's key. `responseText`/`responseImage` extract from the Google response. `WadiProxyError` + `proxyErrorBody` map NO_KEY/KEY_REJECTED/etc. No raw key, no `@google/genai`. | `lib/wadi-ticket` (token), `fetch` |
 | `lib/wadi-ticket.ts` | shared (iso) | Verify Wadi RS256 tickets via `NEXT_PUBLIC_WADI_TICKET_PUBLIC_KEY` (base64 PEM); pins `algorithms:['RS256']`, checks `iss="wadi"`/`aud="brandvista"`/`exp`; fails closed. Trusts a dev key (`NEXT_PUBLIC_WADI_DEV_PUBLIC_KEY`) only when `NODE_ENV!=='production'`. Exports `verifyWadiTicket`, `safeVerifyWadiTicket`, `ticketFromRequest`, `getRequestTicket`. Used by the client gate AND the server routes. | `jose` |
 
 **All four `/api/*` routes** call `getRequestTicket(req)` as their first step
@@ -202,8 +206,9 @@ Walk the code in this order — each step's context is set up by the prior one.
    image model *how* the logo is physically integrated (embroidery, foil,
    letterpress, screen print). The `SUFFIX` forbids "sticker" placement —
    that's the model's failure mode.
-4. **`lib/genai.ts`** — singleton client. The only place `GEMINI_API_KEY` is
-   read.
+4. **`lib/wadi-ai.ts`** — the BYOK proxy client (`callGemini`). All AI goes
+   through Wadi on the user's key; this app holds no key. Note the error
+   mapping (`NO_KEY` / `KEY_REJECTED`).
 5. **`app/api/analyze/route.ts`** — verify `stripJsonFences` covers ```json
    fences and bare `{…}` extraction. The error path returns the raw text so
    a malformed response is debuggable.
@@ -261,7 +266,7 @@ Walk the code in this order — each step's context is set up by the prior one.
 | Cancellation correctness | `app/page.tsx` `cancelled` ref | Without it, hitting Back mid-run can resurrect old responses and clobber a fresh run. Reset to `false` at the top of `handleStart`. Both tracks (`fetchCopy` and `runImagePipeline`) check it. |
 | Logo integration realism | `lib/prompts.ts` `SUFFIX` | The image model's failure mode is "logo as sticker on top of the scene." The `Avoid: ...` suffix is the only thing preventing that. Don't remove it. |
 | Memory footprint | All API routes | Base64 images move through JSON bodies. Fine for a single user; if you ever batch, switch to streaming or temp files. |
-| API key exposure | `lib/genai.ts` | Server-only import. Never import from a client component. Lazy singleton avoids touching `process.env` at module load time on the client build. Env var is `GEMINI_API_KEY` (not `GOOGLE_API_KEY`). |
+| AI key handling (BYOK) | `lib/wadi-ai.ts`, all `/api/*` | This app must **never** hold a provider key. AI goes server→Wadi proxy with the user's ticket; Wadi injects the user's key. Don't reintroduce `@google/genai` or a `GEMINI_API_KEY`. Keep the prompt-building on the server (don't move it client-side) so the tuned prompts stay private. NO_KEY → `NeedsKeyScreen`; KEY_REJECTED → plain error. |
 | Asset registry drift | `lib/assets.ts` ↔ `lib/prompts.ts` ↔ `lib/types.ts` `AssetType` | Adding an `AssetType` requires all three: union literal, `ASSETS` row, and a `case` in `buildPrompt`. TypeScript's exhaustive switch surfaces missing cases as a `string | undefined` return at the call site. |
 | Slide voice drift | `components/SlideCard.tsx` | The slides are intentionally lean — no "Objective:" / "Usage:" labels, no bullet lists. Reintroducing them re-creates the corporate-deck feel even with good copy. |
 | Pacing / pause slides | `components/SlideCard.tsx` `AtmosphereSlide`/`MarkSlide`/`InterludeSlide`, sequence in `ResultsScreen.tsx` | The deck's cinematic feel depends on silent slides interleaved with dense ones (`cover → atmosphere → logoObjective → mark → strategicIntent`, then `pattern → interlude → assets`). Removing these or making them carry copy collapses the rhythm. |
@@ -275,8 +280,8 @@ Walk the code in this order — each step's context is set up by the prior one.
 
 - **Client → Server:** only via `fetch('/api/...')`. No server imports leak
   into client components.
-- **Server-only modules:** `lib/genai.ts`, all `app/api/*` — never imported from
-  a client component. `lib/wadi-ticket.ts` is **isomorphic** (runs in both the
+- **Server-only modules:** `lib/wadi-ai.ts`, all `app/api/*` — never imported
+  from a client component. `lib/wadi-ticket.ts` is **isomorphic** (runs in both the
   client gate and the server routes); it only ever touches the *public*
   verify key, never a secret.
 - **Access boundary:** the client `WadiGate` shows the tool only with a valid
@@ -296,9 +301,11 @@ Walk the code in this order — each step's context is set up by the prior one.
   `ASSETS`) + `lib/prompts.ts` (`case`). Nothing else. If the asset is a
   "system" slide (pattern / social / poster), also add it to
   `SYSTEM_ASSET_TYPES`.
-- **Swap models:** change the model ID in the relevant route. The SDK is
-  unified. If swapping the image model, re-test the logo-integration
-  prompt against the new model — failure modes differ.
+- **Swap models:** change the model ID passed to `callGemini(...)` in the
+  relevant route. The request shape is the `@google/genai` `generateContent`
+  params, forwarded verbatim by the Wadi proxy. If swapping the image model,
+  re-test the logo-integration prompt against the new model — failure modes
+  differ.
 - **Add a slide kind:** add the variant to the `Slide` union in
   `SlideCard.tsx`, write the renderer function, add the case in
   `SlideCard`'s switch, then add the entry to the `slides` memo in
