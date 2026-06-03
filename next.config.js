@@ -6,7 +6,7 @@
 // can't embed).
 const isDev = process.env.NODE_ENV !== 'production';
 const ancestors = ["'self'"];
-if (process.env.WADI_ORIGIN) ancestors.push(process.env.WADI_ORIGIN);
+if (process.env.NEXT_PUBLIC_WADI_ORIGIN) ancestors.push(process.env.NEXT_PUBLIC_WADI_ORIGIN);
 if (isDev) ancestors.push('http://localhost:*');
 const frameAncestors = ancestors.join(' ');
 

@@ -25,13 +25,13 @@
 <body>
   <header>
     <h1>This page pretends to be Wadi</h1>
-    <p>BrandVista is embedded below in a frame. Watch the frame resize itself, and try the width buttons to check it's responsive.</p>
+    <p>BrandVista is embedded below. Wadi sends the ticket by secure handshake (not a URL). Watch it unlock and resize; try the width buttons for responsiveness.</p>
   </header>
   <div class="bar">
     <button onclick="setW('420px')">Phone width</button>
     <button onclick="setW('768px')">Tablet width</button>
     <button onclick="setW('1100px')">Desktop width</button>
-    &nbsp; reported height: <code id="h">—</code>
+    &nbsp; status: <code id="s">loading…</code> &nbsp; height: <code id="h">—</code>
   </div>
   <div id="host">
     <div id="window">
@@ -40,19 +40,30 @@
   </div>
 
   <script>
-    // The tool URL + ticket are injected by the dev script when it serves this file.
-    var TOOL_URL = "%%TOOL_URL%%";
-    document.getElementById('frame').src = TOOL_URL;
+    // Injected by scripts/embed-serve.mjs on every load.
+    var TICKET = "%%TICKET%%";
+    var TOOL_ORIGIN = "%%TOOL_ORIGIN%%";
+
+    var frame = document.getElementById('frame');
+    frame.src = TOOL_ORIGIN + '/';
 
     function setW(w){ document.getElementById('window').style.maxWidth = w; }
 
-    // Wadi-side: receive height reports from the tool and size the frame.
+    // Wadi side of the handshake + resize listener.
     window.addEventListener('message', function (e) {
-      var d = e.data;
-      if (d && d.type === 'wadi:resize' && typeof d.height === 'number') {
-        var f = document.getElementById('frame');
-        f.style.height = d.height + 'px';
+      if (e.origin !== TOOL_ORIGIN) return;          // only trust the tool frame
+      var d = e.data || {};
+      if (d.source === 'wadi-tool' && d.type === 'ready') {
+        // Tool says it's ready — hand it the ticket.
+        frame.contentWindow.postMessage(
+          { source: 'wadi', type: 'ticket', ticket: TICKET }, TOOL_ORIGIN
+        );
+        document.getElementById('s').textContent = 'ticket sent';
+      }
+      if (d.source === 'wadi-tool' && d.type === 'resize' && typeof d.height === 'number') {
+        frame.style.height = d.height + 'px';
         document.getElementById('h').textContent = d.height + 'px';
+        document.getElementById('s').textContent = 'unlocked + resizing';
       }
     });
   </script>

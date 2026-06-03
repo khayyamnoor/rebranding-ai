@@ -76,4 +76,7 @@ const token = await builder.sign(key);
 console.log('\nTest ticket minted (' +
   (expired ? 'EXPIRED — should be refused' : 'valid 5 min') +
   (noKey ? ', no gemini key' : ', gemini key present') + '):\n');
-console.log(`${origin}/?wadi_ticket=${token}\n`);
+console.log(token + '\n');
+console.log('Use as: Authorization: Bearer <token> for API calls.');
+console.log('To see the tool unlock in a browser, use the embed harness');
+console.log('(npm run embed) — Wadi delivers the ticket by handshake, not URL.\n');

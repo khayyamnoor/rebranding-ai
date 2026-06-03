@@ -48,10 +48,11 @@ async function freshTicket() {
 
 createServer(async (req, res) => {
   const token = await freshTicket();
-  const toolUrl = `http://localhost:${TOOL_PORT}/?wadi_ticket=${token}`;
-  const html = template.replace('%%TOOL_URL%%', toolUrl);
+  const html = template
+    .replace('%%TICKET%%', token)
+    .replace('%%TOOL_ORIGIN%%', `http://localhost:${TOOL_PORT}`);
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(html);
 }).listen(Number(PORT), () => {
-  console.log(`Embed harness: http://localhost:${PORT}/  (embeds tool on :${TOOL_PORT})`);
+  console.log(`Embed harness: http://localhost:${PORT}/  (embeds tool on :${TOOL_PORT}, sends ticket by handshake)`);
 });

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "ticket": "node scripts/mint-ticket.mjs"
+    "ticket": "node scripts/mint-ticket.mjs",
+    "embed": "node scripts/embed-serve.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",

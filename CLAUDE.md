@@ -97,16 +97,23 @@ A Wadi ticket is a **JWT signed with RS256**. Observed real example:
   - `iat` / `exp` = issued-at / expiry (unix seconds) — **~5-minute** TTL
   - (No `keys` claim — the "do you have a Gemini key" signal comes from the AI
     proxy's error response, not the ticket.)
-- **Delivery:** Wadi opens the tool in its iframe with the ticket on the URL:
-  `https://<tool>/?wadi_ticket=<JWT>`. (Transport hardening — cookie +
-  postMessage refresh for long sessions — is a Checkpoint-B follow-up.)
-- **Verification (this app):** `lib/wadi.ts` → `verifyTicket()` pins
-  `algorithms: ['RS256']` and checks `iss`/`aud`/`exp` against the **real Wadi
-  public key** in `WADI_JWT_PUBLIC_KEY`. Fails closed.
+- **Delivery — postMessage handshake (per the Wadi integration kit):** Wadi
+  embeds the tool in an iframe (no ticket in the URL). On load the tool posts
+  `{source:'wadi-tool', type:'ready'}` to Wadi; Wadi replies with
+  `{source:'wadi', type:'ticket', ticket:<JWT>}`. Wadi may re-send a fresh
+  ticket anytime (long sessions outlive a 5-min token).
+- **Verification (this app):**
+  - *Client gate (UX):* `components/WadiGate.tsx` verifies the ticket via
+    `lib/wadi-ticket.ts` and only renders the tool when valid; otherwise shows
+    "Open this from Wadi". It also stores the ticket for `getWadiTicket()`.
+  - *Server enforcement (the real boundary):* every `/api/*` route calls
+    `getRequestTicket()` and re-verifies the `Authorization: Bearer` ticket
+    before doing anything. `lib/wadi-ticket.ts` pins `algorithms:['RS256']` and
+    checks `iss="wadi"` / `aud="brandvista"` / `exp`. Fails closed.
 
-**Real Wadi public key:** the founder supplied Wadi's RS256 public key; it is
-installed in `.env.local` and verifies real tickets (proven). It is safe to
-expose (verify-only). The matching private key lives only in Wadi.
+**Real Wadi public key:** supplied by the founder via the integration kit as
+`NEXT_PUBLIC_WADI_TICKET_PUBLIC_KEY` (base64 of the PEM). Safe to expose
+(verify-only). The matching private key lives only in Wadi.
 
 ## Tool-id (audience) convention — CONTRACT
 
@@ -122,26 +129,30 @@ expose (verify-only). The matching private key lives only in Wadi.
 ## Dev-only second verify key (local testing convenience)
 
 The Wadi registry can't mint `brandvista` tickets yet, so for LOCAL dev a second
-trust anchor is supported: `WADI_DEV_JWT_PUBLIC_KEY`. `verifyTicket` trusts it
-**only when `NODE_ENV !== 'production'`**. `scripts/mint-ticket.mjs` signs
-`brandvista` dev tickets with the matching `WADI_DEV_JWT_PRIVATE_KEY` so the tool
-can be exercised locally. On Vercel (`NODE_ENV=production`) these dev vars are
-absent and only the real Wadi public key is trusted.
+trust anchor is supported: `NEXT_PUBLIC_WADI_DEV_PUBLIC_KEY` (base64). It is
+trusted **only when `NODE_ENV !== 'production'`** (dead-code-eliminated from prod
+builds). `scripts/mint-ticket.mjs` signs `brandvista` dev tickets with the
+matching `WADI_DEV_JWT_PRIVATE_KEY`. The embed harness
+(`scripts/embed-serve.mjs`, `npm run embed`) serves a separate-origin parent
+that performs the real handshake with a fresh dev ticket. On Vercel
+(`NODE_ENV=production`) these dev vars are absent and only the real Wadi public
+key is trusted.
 
-## Embedding contract (Wadi frame ↔ this tool)
+## Embedding contract (Wadi frame ↔ this tool) — message shapes
 
-- **Embed:** Wadi loads `https://<tool>/?wadi_ticket=<JWT>` in an iframe. Only
-  `WADI_ORIGIN` (and same-origin) may frame the tool — enforced by the
-  `Content-Security-Policy: frame-ancestors` header in `next.config.js`. No
+- **Embed:** Wadi loads `https://<tool>/` in an iframe (no ticket in URL). Only
+  `NEXT_PUBLIC_WADI_ORIGIN` (and same-origin) may frame the tool — enforced by
+  the `Content-Security-Policy: frame-ancestors` header in `next.config.js`. No
   `X-Frame-Options` (it conflicts with frame-ancestors).
-- **Resize:** the tool posts `{ type: 'wadi:resize', height }` to the parent
-  whenever its content height changes (`components/FrameBridge.tsx`,
-  `ResizeObserver`). Wadi should set the iframe height from this.
-- **Ticket refresh (optional, for >5-min sessions):** Wadi may post
-  `{ type: 'wadi:ticket', token }` to the tool to swap in a fresh ticket; the
-  tool uses it for subsequent API calls without reloading.
+- **Auth handshake:** tool → Wadi `{source:'wadi-tool', type:'ready'}`; Wadi →
+  tool `{source:'wadi', type:'ticket', ticket}` (resend anytime to refresh).
+  Tool ignores ticket messages whose `event.origin` ≠ `NEXT_PUBLIC_WADI_ORIGIN`.
+- **Resize:** tool → Wadi `{source:'wadi-tool', type:'resize', height}` on every
+  content-height change (`components/FrameBridge.tsx`). Wadi should set the
+  iframe height from this. *(Wadi kit didn't specify resize yet — ask Wadi to
+  add this listener.)*
 - **No breakout:** the tool never redirects, opens new tabs, or navigates the
-  top window. Once embedded it strips the ticket from its own address bar.
+  top window.
 
 ## AI proxy spec (Wadi must build this — used in Checkpoint C, tested later)
 
@@ -160,15 +171,17 @@ Generic Gemini passthrough so every app reuses one endpoint:
 
 | Var | Where set | Secret? | Purpose |
 |-----|-----------|---------|---------|
-| `WADI_JWT_PUBLIC_KEY` | this app (Vercel) | no (public key) | verify tickets (RS256, PEM with `\n`) |
-| `WADI_ORIGIN` | this app (Vercel) | no | the only origin allowed to embed the tool |
-| `WADI_AI_PROXY_URL` | this app (Vercel) | no | Wadi AI proxy endpoint (Checkpoint C) |
+| `NEXT_PUBLIC_WADI_TICKET_PUBLIC_KEY` | this app (Vercel) | no (public key) | verify Wadi tickets (RS256, base64 PEM) |
+| `NEXT_PUBLIC_WADI_ORIGIN` | this app (Vercel) | no | the only origin allowed to embed the tool / send tickets |
+| `NEXT_PUBLIC_WADI_DEV_PUBLIC_KEY` | **local `.env.local` only** | no | DEV-only second verify key (base64). Ignored in prod. |
 | `WADI_DEV_JWT_PRIVATE_KEY` | **local `.env.local` only** | YES | DEV-only; lets `scripts/mint-ticket.mjs` mint test tickets. Never set in prod. |
 | `GEMINI_API_KEY` | this app (Vercel) | YES | legacy single shared key; removed at Checkpoint C |
 
-**Key pair:** Wadi gets the matching RSA **private** key (mints tickets); this
-app gets the **public** key (verifies). Generate once, reuse the same pair
-across all apps.
+(Job-4 will add the Wadi AI proxy URL at Checkpoint C.)
+
+**Key pair:** Wadi holds the RSA **private** key (mints tickets); this app holds
+the **public** key (verifies). Same pair reused across all apps. Values come
+from the Wadi integration kit; latest public key is in Wadi's `CLAUDE.md`.
 
 ## Local testing without Wadi
 
@@ -178,14 +191,15 @@ a valid signed ticket. Flags: `--no-key` (omit gemini from `keys`),
 
 ## Phase 1 checkpoint status
 
-- [x] **A — Access gate.** Server-side RS256 ticket verification on the page and
-  all `/api/*` routes. `lib/wadi.ts`, `components/Studio.tsx`,
-  `components/WadiGate.tsx`, server-component `app/page.tsx`.
-- [x] **B — Embedded-tool behavior.** `frame-ancestors` lock to `WADI_ORIGIN`
-  (`next.config.js`); `components/FrameBridge.tsx` posts height for smooth
-  resize, strips the ticket from the URL once embedded, and accepts a refreshed
-  ticket; no redirects/new-tab/breakout. Local harness: `scripts/embed-test.html`
-  + `node scripts/embed-serve.mjs` (separate-origin parent on :4000).
-  Responsive polish lands with the restyle (D).
+- [x] **A — Access gate** (later aligned to the Wadi integration kit).
+  `components/WadiGate.tsx` does the postMessage handshake + client verify and
+  exposes `getWadiTicket()`; `lib/wadi-ticket.ts` is the shared verifier; every
+  `/api/*` route re-verifies server-side (the real boundary). `app/layout.tsx`
+  wraps the app in `WadiGate`; `app/page.tsx` just renders `Studio`.
+- [x] **B — Embedded-tool behavior.** `frame-ancestors` lock to
+  `NEXT_PUBLIC_WADI_ORIGIN` (`next.config.js`); `components/FrameBridge.tsx`
+  posts `wadi-tool/resize` height for smooth resizing; no redirects/new-tab/
+  breakout. Local harness: `npm run embed` (separate-origin parent on :4000 that
+  performs the real handshake). Responsive polish lands with the restyle (D).
 - [ ] C — BYOK via Wadi proxy (remove `GEMINI_API_KEY` dependency).
 - [ ] D — Wadi design tokens (flat, no gradients).

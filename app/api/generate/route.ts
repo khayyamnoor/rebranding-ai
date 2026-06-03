@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getGenAI } from '@/lib/genai';
 import { buildPrompt } from '@/lib/prompts';
 import { getAsset } from '@/lib/assets';
-import { getRequestTicket } from '@/lib/wadi';
+import { getRequestTicket } from '@/lib/wadi-ticket';
 import type { AssetType, BrandProfile } from '@/lib/types';
 
 export const runtime = 'nodejs';

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGenAI } from '@/lib/genai';
-import { getRequestTicket } from '@/lib/wadi';
+import { getRequestTicket } from '@/lib/wadi-ticket';
 import type { BrandProfile, CopyContent } from '@/lib/types';
 
 export const runtime = 'nodejs';

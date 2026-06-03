@@ -25,7 +25,8 @@ graph LR
   end
 
   subgraph Server[Server — Next.js]
-    Page[app/page.tsx<br/>server gate]
+    Layout[app/layout.tsx<br/>wraps WadiGate]
+    Page[app/page.tsx<br/>renders Studio]
     Analyze[app/api/analyze/route.ts]
     Generate[app/api/generate/route.ts]
     Caption[app/api/caption/route.ts]
@@ -37,7 +38,7 @@ graph LR
     Assets[lib/assets.ts]
     Prompts[lib/prompts.ts]
     GenAI[lib/genai.ts]
-    Wadi[lib/wadi.ts<br/>server-only]
+    Wadi[lib/wadi-ticket.ts<br/>isomorphic verifier]
   end
 
   subgraph Ext[External]
@@ -45,9 +46,11 @@ graph LR
     GemImage[(gemini-3.1-flash-image-preview<br/>image generation)]
   end
 
-  Page -- verify ticket --> Wadi
-  Page -- no/invalid ticket --> WGate
-  Page -- valid ticket --> Studio
+  Layout --> WGate
+  Layout --> Page
+  WGate -- "postMessage handshake + verify" --> Wadi
+  WGate -- valid ticket --> Studio
+  Page --> Studio
   Studio --> Upload --> Zone
   Upload --> Grid --> Assets
   Studio --> Gen --> Card
@@ -81,11 +84,13 @@ graph LR
   Assets --> Types
 ```
 
-**Access gate:** `app/page.tsx` is a server component. It verifies the Wadi
-ticket (`?wadi_ticket=`) via `lib/wadi.ts` and renders either `WadiGate`
-(refused) or `Studio` (the tool). Every `/api/*` route re-verifies the ticket
-from the `Authorization: Bearer` header — that re-check is the real enforcement
-boundary; the page gate is UX + defense-in-depth.
+**Access gate (Wadi integration kit):** `app/layout.tsx` wraps everything in
+`components/WadiGate` (client). Embedded, it posts `{source:'wadi-tool',
+type:'ready'}` and Wadi replies `{source:'wadi', type:'ticket', ticket}`;
+WadiGate verifies via `lib/wadi-ticket.ts`, renders the tool only when valid,
+and exposes `getWadiTicket()`. The client gate is UX — the **real enforcement**
+is that every `/api/*` route re-verifies the `Authorization: Bearer` ticket
+server-side via `getRequestTicket()`.
 
 Read top-to-bottom. Anything pointing into a node is an inbound dependency; the
 arrow tail is the consumer.
@@ -96,8 +101,8 @@ arrow tail is the consumer.
 
 ```mermaid
 sequenceDiagram
-  participant W as Wadi
-  participant Pg as app/page.tsx (server gate)
+  participant W as Wadi (parent frame)
+  participant Gate as WadiGate (client)
   participant P as Studio (client)
   participant A as /api/analyze
   participant G as /api/generate
@@ -106,9 +111,11 @@ sequenceDiagram
   participant GF as gemini-2.5-flash
   participant GI as gemini-3.1-flash-image-preview
 
-  W->>Pg: open /?wadi_ticket=<RS256 JWT>
-  Pg->>Pg: verifyTicket() — no/invalid → WadiGate, stop
-  Pg-->>P: render Studio(ticket)
+  W->>Gate: embed iframe (no ticket in URL)
+  Gate->>W: postMessage {source:'wadi-tool', type:'ready'}
+  W->>Gate: postMessage {source:'wadi', type:'ticket', ticket}
+  Gate->>Gate: verify (iss/aud/exp, RS256) — invalid → "Open from Wadi", stop
+  Gate-->>P: render Studio (ticket stored for getWadiTicket())
   Note over P,Cpy: every /api/* call carries Authorization: Bearer <ticket>;<br/>each route re-verifies it (401 if absent/expired/forged)
   P->>A: POST multipart(logo) + Bearer ticket
   A->>GF: generateContent(image + JSON prompt)
@@ -148,12 +155,12 @@ and the slide deck swaps skeleton blocks for real copy live.
 
 | File | Layer | Responsibility | Key deps |
 |------|-------|----------------|----------|
-| `app/layout.tsx` | client | HTML shell, fonts | — |
-| `app/page.tsx` | **server** | Wadi access gate. Reads `?wadi_ticket`, `verifyTicket()`; renders `WadiGate` (refused) or `Studio` (passes the raw ticket down). `export const dynamic = 'force-dynamic'`. | `lib/wadi`, `Studio`, `WadiGate` |
-| `components/Studio.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref. Holds the ticket in state (so `FrameBridge` can refresh it); `authedFetch` attaches `Authorization: Bearer <ticket>` to every `/api/*` call. Props: `ticket`, `wadiOrigin`, `userId`, `plan`. Mounts `FrameBridge`. | `components/*`, `lib/types` |
-| `components/WadiGate.tsx` | client | "Please open this from Wadi" refusal screen — exposes no tool functionality. Styled minimally (Wadi tokens applied in Checkpoint D). | — |
-| `components/FrameBridge.tsx` | client | Embedded-mode glue (renders nothing). Posts `{type:'wadi:resize',height}` to the parent via `ResizeObserver`; strips `wadi_ticket` from the URL once embedded; accepts `{type:'wadi:ticket',token}` to refresh the in-memory ticket (origin-checked in prod). | — |
-| `next.config.js` | server cfg | `headers()` sets `Content-Security-Policy: frame-ancestors 'self' $WADI_ORIGIN` (+ `localhost:*` in dev) — only Wadi may embed. Also `nosniff`, `Referrer-Policy`. No `X-Frame-Options`. | — |
+| `app/layout.tsx` | server | HTML shell, fonts; wraps the app in `<WadiGate>` (the access gate). | `WadiGate` |
+| `app/page.tsx` | server | Just renders `<Studio/>` — access is handled by `WadiGate` (layout) + server API checks. | `Studio` |
+| `components/Studio.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref. `authedFetch` attaches `Authorization: Bearer <getWadiTicket()>` to every `/api/*` call. No props. | `components/*`, `lib/wadi-ticket`, `lib/types` |
+| `components/WadiGate.tsx` | client | Access gate. postMessage handshake (`ready` → receive `ticket`), verifies via `lib/wadi-ticket`, renders the tool only when valid (else "Open this from Wadi"). Exposes `getWadiTicket()`. Mounts `FrameBridge`. Ignores ticket messages not from `NEXT_PUBLIC_WADI_ORIGIN`. | `lib/wadi-ticket`, `FrameBridge` |
+| `components/FrameBridge.tsx` | client | Renders nothing. When embedded, posts `{source:'wadi-tool',type:'resize',height}` to the parent via `ResizeObserver` (prod targets `NEXT_PUBLIC_WADI_ORIGIN`, dev `'*'`). | — |
+| `next.config.js` | server cfg | `headers()` sets `Content-Security-Policy: frame-ancestors 'self' $NEXT_PUBLIC_WADI_ORIGIN` (+ `localhost:*` in dev) — only Wadi may embed. Also `nosniff`, `Referrer-Policy`. No `X-Frame-Options`. | — |
 | `app/globals.css` | client | Design tokens + component classes | tailwind |
 | `components/UploadScreen.tsx` | client | Hero, upload zone, asset grid, validate-and-start. Copy is editorial ("Begin with the mark.", "The mark", "The world", "Begin") — no marketing language about "AI" or "mockups". | `UploadZone`, `AssetGrid` |
 | `components/UploadZone.tsx` | client | Drag/drop + click-to-browse | — |
@@ -172,12 +179,13 @@ and the slide deck swaps skeleton blocks for real copy live.
 | `lib/assets.ts` | shared | Asset metadata: label, aspect ratio. `zone: {x,y,w,h}` is **legacy/dead** — left in the shape but no longer read (compositing was removed). | `lib/types` |
 | `lib/prompts.ts` | shared | `buildPrompt(assetType, brand)` — one switch arm per asset describing how the logo should be natively integrated (embroidered, foil-stamped, letterpressed, etc). Prompt voice is **editorial / architectural / atmospheric** — single sensory anchor, generous negative space, no commercial product-shot framing. The `SUFFIX` negative list rejects bokeh, hero-shot lighting, busy compositions, generic stock feel. `pick()` provides safe fallbacks for empty profile arrays. | `lib/types` |
 | `lib/genai.ts` | server-only | Lazy-initialized `GoogleGenAI` client; throws if `GEMINI_API_KEY` is missing. (Replaced by the Wadi AI proxy in Checkpoint C.) | `@google/genai` |
-| `lib/wadi.ts` | server-only | Verify Wadi RS256 tickets via `WADI_JWT_PUBLIC_KEY` (pins `algorithms:['RS256']`, checks `iss`/`aud`/`exp`, fails closed). `verifyTicket`, `ticketFromRequest`, `getRequestTicket`. | `jose` |
+| `lib/wadi-ticket.ts` | shared (iso) | Verify Wadi RS256 tickets via `NEXT_PUBLIC_WADI_TICKET_PUBLIC_KEY` (base64 PEM); pins `algorithms:['RS256']`, checks `iss="wadi"`/`aud="brandvista"`/`exp`; fails closed. Trusts a dev key (`NEXT_PUBLIC_WADI_DEV_PUBLIC_KEY`) only when `NODE_ENV!=='production'`. Exports `verifyWadiTicket`, `safeVerifyWadiTicket`, `ticketFromRequest`, `getRequestTicket`. Used by the client gate AND the server routes. | `jose` |
 
 **All four `/api/*` routes** call `getRequestTicket(req)` as their first step
 and return `401` if the ticket is absent, expired, or forged — this is the
-server-side enforcement boundary. Dev/test tickets: `scripts/mint-ticket.mjs`
-(`npm run ticket`).
+server-side enforcement boundary. Dev/test: `scripts/mint-ticket.mjs`
+(`npm run ticket`) for raw tokens; `scripts/embed-serve.mjs` (`npm run embed`)
+for the full handshake from a separate origin.
 
 ---
 
@@ -244,7 +252,7 @@ Walk the code in this order — each step's context is set up by the prior one.
 
 | Concern | Where | Why it matters |
 |---------|-------|----------------|
-| Wadi access gate | `lib/wadi.ts`, `app/page.tsx`, all `/api/*` | The whole paywall depends on this. `jwtVerify` MUST stay pinned to `algorithms:['RS256']` (prevents `alg:none` and HS256-confusion forgery). Every API route must verify independently — the page gate alone is bypassable by calling the API directly. `verifyTicket` fails closed (returns null on any error, incl. missing key). Never log the raw ticket. |
+| Wadi access gate | `lib/wadi-ticket.ts`, `components/WadiGate.tsx`, all `/api/*` | The whole paywall depends on this. `jwtVerify` MUST stay pinned to `algorithms:['RS256']` (prevents `alg:none` and HS256-confusion forgery). The client `WadiGate` is UX only — **every API route must verify independently** (`getRequestTicket`); the gate alone is bypassable by calling the API directly. Verifier fails closed. `WadiGate` must keep the `event.origin === NEXT_PUBLIC_WADI_ORIGIN` check on the ticket message. `aud` is locked to `brandvista`. Never log the raw ticket. |
 | Editorial voice contract (copy) | `app/api/copy/route.ts`, `app/api/caption/route.ts` | The deck's "luxury, human-directed" feel lives in these prompts. The forbidden-words list and word caps are the contract — they have already been tuned to suppress the "[object] embodies [concept] through [feature]" failure mode. Loosening them regresses the whole product. |
 | Editorial voice contract (image prompts) | `lib/prompts.ts` `bodyFor()` + `SUFFIX` | The image model's natural failure mode is commercial product photography ("hero shot, 3/4 angle, bokeh"). The prompts were rewritten to editorial/architectural language with a single sensory anchor per asset, and the `SUFFIX` explicitly bans the failure mode vocabulary. Reverting to product-shot language regresses imagery to stock-luxury aesthetic. |
 | Caption register rotation | `app/api/caption/route.ts` `pickRegister()` | Determinism is intentional: same asset → same register, so a deck of 4 captions stays varied without per-call state. If you switch to random selection, captions can drift to a single register on a given run. |
@@ -267,13 +275,14 @@ Walk the code in this order — each step's context is set up by the prior one.
 
 - **Client → Server:** only via `fetch('/api/...')`. No server imports leak
   into client components.
-- **Server-only modules:** `lib/genai.ts`, `lib/wadi.ts` (marked
-  `import 'server-only'`), all `app/api/*`. `lib/wadi.ts` is imported by the
-  server component `app/page.tsx` and by the API routes — never by a client
-  component.
-- **Access boundary:** unauthenticated requests get the `WadiGate` (page) or a
-  `401` (API). The raw ticket flows server→`Studio` as a prop and back up only
-  in the `Authorization` header — it is never persisted or logged.
+- **Server-only modules:** `lib/genai.ts`, all `app/api/*` — never imported from
+  a client component. `lib/wadi-ticket.ts` is **isomorphic** (runs in both the
+  client gate and the server routes); it only ever touches the *public*
+  verify key, never a secret.
+- **Access boundary:** the client `WadiGate` shows the tool only with a valid
+  ticket; the enforced boundary is `401` from every API route. The ticket lives
+  in client memory (`getWadiTicket()`) and travels only in the `Authorization`
+  header — never persisted or logged.
 - **Shared modules:** `lib/types.ts`, `lib/assets.ts`, `lib/prompts.ts` are
   pure (no I/O, no `fetch`, no `process.env`) and safe on either side.
 - **No persistence:** nothing writes to disk or a database. Logos and

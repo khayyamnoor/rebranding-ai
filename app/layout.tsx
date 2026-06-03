@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { WadiGate } from '@/components/WadiGate';
 
 export const metadata: Metadata = {
   title: 'BrandVista AI',
@@ -17,7 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <WadiGate>{children}</WadiGate>
+      </body>
     </html>
   );
 }

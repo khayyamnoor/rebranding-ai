@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { UploadScreen } from '@/components/UploadScreen';
 import { GenerationScreen } from '@/components/GenerationScreen';
 import { ResultsScreen } from '@/components/ResultsScreen';
-import { FrameBridge } from '@/components/FrameBridge';
+import { getWadiTicket } from '@/components/WadiGate';
 import type {
   AssetJob,
   AssetStatus,
@@ -15,24 +15,12 @@ import type {
 
 type Phase = 'upload' | 'analyzing' | 'results';
 
-export interface StudioProps {
-  /** Raw Wadi ticket; attached to every API call (server re-verifies it). */
-  ticket: string;
-  /** Wadi's origin — the only allowed frame host / postMessage target. */
-  wadiOrigin: string;
-  /** Identity from the verified ticket. */
-  userId: string;
-  plan: string;
-}
-
 /**
- * The interactive tool. Rendered only after the server has verified a valid
- * Wadi ticket (see app/page.tsx). The raw ticket string is passed down so every
- * API call can carry it — the API routes verify it again server-side.
+ * The interactive tool. Rendered only once <WadiGate> has a valid ticket. Every
+ * API call carries the current Wadi ticket (via getWadiTicket); the API routes
+ * re-verify it server-side — the real enforcement boundary.
  */
-export function Studio({ ticket: initialTicket, wadiOrigin }: StudioProps) {
-  // Held in state so a refreshed ticket from Wadi (long sessions) takes effect.
-  const [ticket, setTicket] = useState(initialTicket);
+export function Studio() {
   const [phase, setPhase] = useState<Phase>('upload');
   const [profile, setProfile] = useState<BrandProfile | null>(null);
   const [copyContent, setCopyContent] = useState<CopyContent | null>(null);
@@ -42,16 +30,14 @@ export function Studio({ ticket: initialTicket, wadiOrigin }: StudioProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const cancelled = useRef(false);
 
-  // Every request to this tool's own API carries the Wadi ticket, which the
-  // route re-verifies server-side before doing anything.
-  const authedFetch = useCallback(
-    (input: string, init: RequestInit = {}) => {
-      const headers = new Headers(init.headers);
-      headers.set('Authorization', `Bearer ${ticket}`);
-      return fetch(input, { ...init, headers });
-    },
-    [ticket],
-  );
+  // Every request to this tool's own API carries the current Wadi ticket, which
+  // the route re-verifies server-side before doing anything.
+  const authedFetch = useCallback((input: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    const ticket = getWadiTicket();
+    if (ticket) headers.set('Authorization', `Bearer ${ticket}`);
+    return fetch(input, { ...init, headers });
+  }, []);
 
   const updateJob = useCallback(
     (type: AssetType, patch: Partial<AssetJob>) => {
@@ -219,7 +205,6 @@ export function Studio({ ticket: initialTicket, wadiOrigin }: StudioProps) {
 
   return (
     <main>
-      <FrameBridge wadiOrigin={wadiOrigin} onTicket={setTicket} />
       {errorMessage && (
         <div
           role="alert"

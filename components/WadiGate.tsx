@@ -1,28 +1,89 @@
+'use client';
+
+import { useEffect, useState, type ReactNode } from 'react';
+import { safeVerifyWadiTicket } from '@/lib/wadi-ticket';
+import { FrameBridge } from '@/components/FrameBridge';
+
+const WADI_ORIGIN = process.env.NEXT_PUBLIC_WADI_ORIGIN;
+
+// The current valid ticket, attached to every BrandVista API call (which then
+// re-verifies it server-side — the real enforcement). Updated automatically
+// when Wadi sends a fresh one.
+let currentTicket: string | null = null;
+export function getWadiTicket(): string | null {
+  return currentTicket;
+}
+
+type GateState = 'checking' | 'ok' | 'blocked';
+
 /**
- * Shown when the tool is opened without a valid Wadi ticket (e.g. someone hits
- * the raw .vercel.app URL directly). It must not expose any tool functionality.
- * Styling is intentionally minimal here; it is brought onto the Wadi design
- * system in a later checkpoint.
+ * Wadi access gate (client UX). Wraps the whole app in app/layout.tsx.
+ *
+ * Handshake (per the Wadi integration kit): once embedded, the tool posts
+ * `{source:'wadi-tool', type:'ready'}` to Wadi, and Wadi replies with
+ * `{source:'wadi', type:'ticket', ticket}`. We verify the ticket here for UX;
+ * the API routes verify it again server-side on every call.
  */
-export function WadiGate() {
+export function WadiGate({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<GateState>('checking');
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (WADI_ORIGIN && event.origin !== WADI_ORIGIN) return; // only trust Wadi
+      const d = event.data as { source?: string; type?: string; ticket?: unknown };
+      if (!d || d.source !== 'wadi' || d.type !== 'ticket' || typeof d.ticket !== 'string') {
+        return;
+      }
+      const token = d.ticket;
+      safeVerifyWadiTicket(token).then((ticket) => {
+        if (ticket) {
+          currentTicket = token; // refreshed whenever Wadi sends a new one
+          setState('ok');
+        } else {
+          setState('blocked');
+        }
+      });
+    }
+
+    window.addEventListener('message', onMessage);
+
+    if (window.parent !== window.self) {
+      // Inside a frame — tell Wadi we're ready for a ticket.
+      window.parent.postMessage({ source: 'wadi-tool', type: 'ready' }, WADI_ORIGIN || '*');
+    } else {
+      setState('blocked'); // opened directly (not via Wadi) → refuse
+    }
+
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  return (
+    <>
+      <FrameBridge />
+      {state === 'ok' ? children : <GateScreen state={state} />}
+    </>
+  );
+}
+
+function GateScreen({ state }: { state: Exclude<GateState, 'ok'> }) {
   return (
     <main
       style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem',
+        minHeight: '100dvh',
+        display: 'grid',
+        placeItems: 'center',
+        padding: 24,
         textAlign: 'center',
       }}
     >
-      <div style={{ maxWidth: '24rem' }}>
-        <h1 style={{ fontSize: '1.25rem', marginBottom: '0.75rem' }}>
-          Please open this from Wadi
+      <div style={{ maxWidth: 420 }}>
+        <h1 style={{ fontSize: 22, marginBottom: 8 }}>
+          {state === 'checking' ? 'Connecting to Wadi…' : 'Open this from Wadi'}
         </h1>
-        <p style={{ fontSize: '0.95rem', lineHeight: 1.5, opacity: 0.8 }}>
-          This tool runs inside the Wadi platform. Open it from your Wadi
-          dashboard while signed in to use it.
+        <p style={{ opacity: 0.7, lineHeight: 1.5 }}>
+          {state === 'checking'
+            ? 'One moment.'
+            : 'This tool only runs inside your Wadi dashboard. Please open it from there while signed in.'}
         </p>
       </div>
     </main>
