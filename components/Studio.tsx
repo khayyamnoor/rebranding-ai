@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { UploadScreen } from '@/components/UploadScreen';
 import { GenerationScreen } from '@/components/GenerationScreen';
 import { ResultsScreen } from '@/components/ResultsScreen';
+import { FrameBridge } from '@/components/FrameBridge';
 import type {
   AssetJob,
   AssetStatus,
@@ -14,12 +15,24 @@ import type {
 
 type Phase = 'upload' | 'analyzing' | 'results';
 
+export interface StudioProps {
+  /** Raw Wadi ticket; attached to every API call (server re-verifies it). */
+  ticket: string;
+  /** Wadi's origin — the only allowed frame host / postMessage target. */
+  wadiOrigin: string;
+  /** Identity from the verified ticket. */
+  userId: string;
+  plan: string;
+}
+
 /**
  * The interactive tool. Rendered only after the server has verified a valid
  * Wadi ticket (see app/page.tsx). The raw ticket string is passed down so every
  * API call can carry it — the API routes verify it again server-side.
  */
-export function Studio({ ticket }: { ticket: string }) {
+export function Studio({ ticket: initialTicket, wadiOrigin }: StudioProps) {
+  // Held in state so a refreshed ticket from Wadi (long sessions) takes effect.
+  const [ticket, setTicket] = useState(initialTicket);
   const [phase, setPhase] = useState<Phase>('upload');
   const [profile, setProfile] = useState<BrandProfile | null>(null);
   const [copyContent, setCopyContent] = useState<CopyContent | null>(null);
@@ -206,6 +219,7 @@ export function Studio({ ticket }: { ticket: string }) {
 
   return (
     <main>
+      <FrameBridge wadiOrigin={wadiOrigin} onTicket={setTicket} />
       {errorMessage && (
         <div
           role="alert"

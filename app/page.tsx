@@ -24,5 +24,12 @@ export default async function Page({
     return <WadiGate />;
   }
 
-  return <Studio ticket={token} />;
+  return (
+    <Studio
+      ticket={token}
+      wadiOrigin={process.env.WADI_ORIGIN ?? ''}
+      userId={ticket.userId}
+      plan={ticket.plan}
+    />
+  );
 }

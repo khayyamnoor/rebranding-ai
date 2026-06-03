@@ -150,8 +150,10 @@ and the slide deck swaps skeleton blocks for real copy live.
 |------|-------|----------------|----------|
 | `app/layout.tsx` | client | HTML shell, fonts | — |
 | `app/page.tsx` | **server** | Wadi access gate. Reads `?wadi_ticket`, `verifyTicket()`; renders `WadiGate` (refused) or `Studio` (passes the raw ticket down). `export const dynamic = 'force-dynamic'`. | `lib/wadi`, `Studio`, `WadiGate` |
-| `components/Studio.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref. `authedFetch` attaches `Authorization: Bearer <ticket>` to every `/api/*` call. | `components/*`, `lib/types` |
+| `components/Studio.tsx` | client | Phase state machine (`upload → analyzing → results`); orchestrates analyze + parallel (copy ∥ image loop) + per-asset caption; cancellation via `cancelled` ref. Holds the ticket in state (so `FrameBridge` can refresh it); `authedFetch` attaches `Authorization: Bearer <ticket>` to every `/api/*` call. Props: `ticket`, `wadiOrigin`, `userId`, `plan`. Mounts `FrameBridge`. | `components/*`, `lib/types` |
 | `components/WadiGate.tsx` | client | "Please open this from Wadi" refusal screen — exposes no tool functionality. Styled minimally (Wadi tokens applied in Checkpoint D). | — |
+| `components/FrameBridge.tsx` | client | Embedded-mode glue (renders nothing). Posts `{type:'wadi:resize',height}` to the parent via `ResizeObserver`; strips `wadi_ticket` from the URL once embedded; accepts `{type:'wadi:ticket',token}` to refresh the in-memory ticket (origin-checked in prod). | — |
+| `next.config.js` | server cfg | `headers()` sets `Content-Security-Policy: frame-ancestors 'self' $WADI_ORIGIN` (+ `localhost:*` in dev) — only Wadi may embed. Also `nosniff`, `Referrer-Policy`. No `X-Frame-Options`. | — |
 | `app/globals.css` | client | Design tokens + component classes | tailwind |
 | `components/UploadScreen.tsx` | client | Hero, upload zone, asset grid, validate-and-start. Copy is editorial ("Begin with the mark.", "The mark", "The world", "Begin") — no marketing language about "AI" or "mockups". | `UploadZone`, `AssetGrid` |
 | `components/UploadZone.tsx` | client | Drag/drop + click-to-browse | — |

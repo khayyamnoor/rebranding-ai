@@ -128,6 +128,21 @@ trust anchor is supported: `WADI_DEV_JWT_PUBLIC_KEY`. `verifyTicket` trusts it
 can be exercised locally. On Vercel (`NODE_ENV=production`) these dev vars are
 absent and only the real Wadi public key is trusted.
 
+## Embedding contract (Wadi frame ↔ this tool)
+
+- **Embed:** Wadi loads `https://<tool>/?wadi_ticket=<JWT>` in an iframe. Only
+  `WADI_ORIGIN` (and same-origin) may frame the tool — enforced by the
+  `Content-Security-Policy: frame-ancestors` header in `next.config.js`. No
+  `X-Frame-Options` (it conflicts with frame-ancestors).
+- **Resize:** the tool posts `{ type: 'wadi:resize', height }` to the parent
+  whenever its content height changes (`components/FrameBridge.tsx`,
+  `ResizeObserver`). Wadi should set the iframe height from this.
+- **Ticket refresh (optional, for >5-min sessions):** Wadi may post
+  `{ type: 'wadi:ticket', token }` to the tool to swap in a fresh ticket; the
+  tool uses it for subsequent API calls without reloading.
+- **No breakout:** the tool never redirects, opens new tabs, or navigates the
+  top window. Once embedded it strips the ticket from its own address bar.
+
 ## AI proxy spec (Wadi must build this — used in Checkpoint C, tested later)
 
 Generic Gemini passthrough so every app reuses one endpoint:
@@ -166,7 +181,11 @@ a valid signed ticket. Flags: `--no-key` (omit gemini from `keys`),
 - [x] **A — Access gate.** Server-side RS256 ticket verification on the page and
   all `/api/*` routes. `lib/wadi.ts`, `components/Studio.tsx`,
   `components/WadiGate.tsx`, server-component `app/page.tsx`.
-- [ ] B — Embedded-tool behavior (frame lock to `WADI_ORIGIN`, resize messaging,
-  responsive, ticket transport hardening).
+- [x] **B — Embedded-tool behavior.** `frame-ancestors` lock to `WADI_ORIGIN`
+  (`next.config.js`); `components/FrameBridge.tsx` posts height for smooth
+  resize, strips the ticket from the URL once embedded, and accepts a refreshed
+  ticket; no redirects/new-tab/breakout. Local harness: `scripts/embed-test.html`
+  + `node scripts/embed-serve.mjs` (separate-origin parent on :4000).
+  Responsive polish lands with the restyle (D).
 - [ ] C — BYOK via Wadi proxy (remove `GEMINI_API_KEY` dependency).
 - [ ] D — Wadi design tokens (flat, no gradients).
