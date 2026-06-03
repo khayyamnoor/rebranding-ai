@@ -35,6 +35,7 @@ export class WadiProxyError extends Error {
 interface GeminiRequest {
   model: string;
   contents: unknown;
+  /** SDK-style config; mapped to REST `generationConfig` (e.g. responseModalities, imageConfig). */
   config?: unknown;
 }
 
@@ -55,23 +56,40 @@ export async function callGemini(ticket: string, req: GeminiRequest): Promise<Ge
   if (!WADI_AI_PROXY_URL) {
     throw new WadiProxyError('PROXY_UNCONFIGURED', 500, 'Wadi AI proxy URL is not configured');
   }
+
+  // Wadi's path-based contract: { provider, path, body } where body is the raw
+  // Gemini REST request. SDK-style `config` maps to REST `generationConfig`.
+  const geminiBody: Record<string, unknown> = { contents: req.contents };
+  if (req.config) geminiBody.generationConfig = req.config;
+
   let res: Response;
   try {
     res = await fetch(WADI_AI_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ticket}` },
-      body: JSON.stringify({ provider: 'gemini', ...req }),
+      body: JSON.stringify({
+        provider: 'gemini',
+        path: `/v1beta/models/${req.model}:generateContent`,
+        body: geminiBody,
+      }),
     });
   } catch {
     throw new WadiProxyError('UPSTREAM', 502, 'Could not reach the Wadi AI proxy');
   }
 
   if (res.status === 401) throw new WadiProxyError('UNAUTHORIZED', 401);
-  if (res.status === 402 || res.status === 403) throw new WadiProxyError('NO_KEY', 402);
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { code?: string; message?: string };
-    if (body.code === 'KEY_REJECTED') throw new WadiProxyError('KEY_REJECTED', 400, body.message);
-    throw new WadiProxyError('UPSTREAM', 502, body.message);
+    // Wadi wraps errors as { error, message }. Classify so the UI can react.
+    const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; message?: string };
+    const tag = `${body.error ?? body.code ?? ''} ${body.message ?? ''}`.toLowerCase();
+    if (res.status === 402 || res.status === 403 ||
+        /no[_\s-]?key|missing.*key|key.*not.*(found|configured|set)|add.*key/.test(tag)) {
+      throw new WadiProxyError('NO_KEY', 402);
+    }
+    if (/key[_\s-]?(rejected|invalid)|invalid.*key|api key not valid|api_key_invalid/.test(tag)) {
+      throw new WadiProxyError('KEY_REJECTED', 400, body.message);
+    }
+    throw new WadiProxyError('UPSTREAM', 502, body.message || body.error);
   }
   return (await res.json()) as GeminiResponse;
 }

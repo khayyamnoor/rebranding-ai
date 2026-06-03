@@ -160,20 +160,31 @@ key is trusted.
 (NOT browser → proxy), so the tuned prompts stay private. The user's key never
 reaches this app. Built in `lib/wadi-ai.ts` (`callGemini`).
 
-Generic Gemini passthrough so every app reuses one endpoint:
+**CONFIRMED against the live proxy** (`https://wadi-kappa.vercel.app/api/ai/proxy`).
+**Path-based passthrough** — Wadi stays generic; BrandVista builds the path
+(`lib/wadi-ai.ts` adapts).
 
 - **Request:** `POST {WADI_AI_PROXY_URL}` (default `<NEXT_PUBLIC_WADI_ORIGIN>/api/ai/proxy`)
-  with `Authorization: Bearer <ticket>` and JSON body
-  `{ provider: "gemini", model, contents, config }` (the `@google/genai`
-  `generateContent` params). Wadi verifies the ticket, injects that user's
-  Gemini key, calls Google, returns Google's response JSON.
-- **Responses BrandVista expects:**
-  - `200` + Google GenAI response JSON (this app reads
-    `candidates[0].content.parts[]` for text/image).
-  - `401` → invalid ticket.
-  - `402`/`403` → user has no Gemini key → app shows "Add your Gemini key in Wadi".
-  - `400`/`422` with `{code:"KEY_REJECTED", message}` → provider rejected the key
-    → app shows "that key didn't work — check it in Wadi".
+  with `Authorization: Bearer <ticket>` and JSON body:
+  ```json
+  { "provider": "gemini",
+    "path": "/v1beta/models/<model>:generateContent",
+    "body": { "contents": [...], "generationConfig": { ... } } }
+  ```
+  (`body` is the raw Gemini REST request. SDK-style `config` →
+  `generationConfig`; e.g. image gen uses
+  `generationConfig: { responseModalities:["IMAGE"], imageConfig:{ aspectRatio } }`.)
+  Wadi verifies the ticket, injects the user's Gemini key, calls Google.
+- **Success:** `200` + **Google's raw REST JSON** (this app reads
+  `candidates[0].content.parts[]` — `.text` and `.inlineData.data`).
+- **Errors:** wrapped as `{ error, message }`:
+  - `401 no_ticket` / `invalid_ticket` → app shows the Wadi gate.
+  - no-key (user hasn't added a Gemini key) → app shows "Add your Gemini key in
+    Wadi". `lib/wadi-ai.ts` classifies this from status 402/403 or an
+    `error`/`message` matching `no_key`/"missing key". **(Confirm exact no-key
+    status+string with Wadi when convenient.)**
+  - rejected key (e.g. Google "API key not valid") → "that key didn't work —
+    check it in Wadi".
 - This app no longer holds `GEMINI_API_KEY` and no longer imports `@google/genai`.
 
 ## Environment variables

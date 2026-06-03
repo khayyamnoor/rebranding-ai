@@ -28,14 +28,14 @@ createServer((req, res) => {
   req.on('end', () => {
     const hasTicket = (req.headers['authorization'] || '').startsWith('Bearer ');
     console.log(`[mock-proxy] POST  ticket:${hasTicket ? 'yes' : 'no'}  mode:${MODE}`);
-    // A real proxy would verify the ticket and inject the user's key here.
+    // Mirrors the real Wadi proxy's wrapped error shape { error, message }.
     if (MODE === 'reject') {
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ code: 'KEY_REJECTED', message: 'invalid key' }));
+      res.end(JSON.stringify({ error: 'key_invalid', message: 'API key not valid. Please pass a valid API key.' }));
       return;
     }
     res.writeHead(402, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ code: 'NO_KEY' }));
+    res.end(JSON.stringify({ error: 'no_key', message: 'No Gemini key on file for this user.' }));
   });
 }).listen(Number(PORT), () => {
   console.log(`Mock Wadi AI proxy (mode=${MODE}) on http://localhost:${PORT}`);

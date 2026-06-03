@@ -31,17 +31,17 @@ Vercel → your BrandVista project → **Settings → Environment Variables**
 LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFyZW9LdGNDZ21oM1dUc080OHA2cAo4Z202NXk2WWp6emhRSm1qWEdxS0NISGNOU0dRQzErYy90TFdMZU81ZTBvRExQUENxL0xhK0dIYzBFdFZ5eVhiClJNajQzQUQxRGQ4alc4ejFsV2tXcWxJSzIwbDNodVBsZHl3T2psUFZuNDFiNWp3RXZzWldTWWlicm9ubWJxcG8KSWdDbkVBcnYwcWw1T0lJSzZ3NUpidkdTWHVaZ3dkWUtkY2RYQUJ2emR5aGFwWUp0c3NkWmVJZnUyVEZucUQ1SApiRkVzaXZMMDIrakd6bFYvUmpXRU90OGZjYjdER1BxWDdrV281bDlNQmtoVUZrNlJaQUtoZFdYVUYzejNJZzZRCkZpbGRYemNwbXdCeWZTV0IxbGlUT0VaeXRnbXJqNWF1VDBzUkI2aGhlZHFTYTNGa2FsTnphbmRCYS8vb3NxS0gKTFFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==
 ```
 
-**`NEXT_PUBLIC_WADI_ORIGIN`** — your real Wadi web address (the only site allowed
-to embed this tool and send tickets), e.g.
+**`NEXT_PUBLIC_WADI_ORIGIN`** — your Wadi web address (the only site allowed to
+embed this tool and send tickets):
 ```
-https://app.wadi.com
+https://wadi-kappa.vercel.app
 ```
 
-**`WADI_AI_PROXY_URL`** — Wadi's AI proxy endpoint, e.g.
+**`WADI_AI_PROXY_URL`** — Wadi's AI proxy endpoint (confirmed live):
 ```
-https://app.wadi.com/api/ai/proxy
+https://wadi-kappa.vercel.app/api/ai/proxy
 ```
-(If you leave this unset, the app uses `NEXT_PUBLIC_WADI_ORIGIN` + `/api/ai/proxy`.)
+(If you leave this unset, the app auto-uses `NEXT_PUBLIC_WADI_ORIGIN` + `/api/ai/proxy`, which is the same value.)
 
 ### Do NOT set these in production
 - `GEMINI_API_KEY` — removed; this app no longer calls Gemini directly.
